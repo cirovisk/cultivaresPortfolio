@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Ferramentas
+.agents/
+
+# Dados brutos (baixados automaticamente pelo pipeline)
+relatorio_cultivares.csv
