@@ -1,29 +1,30 @@
 """
 Análise Estatística do Registro Nacional de Cultivares (RNC)
 =============================================================
-Fonte: relatorio_cultivares.csv
+Fonte: SNPC/MAPA — baixado automaticamente se ausente localmente.
 Autor: Análise automatizada com Pandas
 """
 
-import pandas as pd
 import warnings
 warnings.filterwarnings("ignore")
+
+import pandas as pd
+from data_pipeline import (
+    carregar_dados,
+    COL_DATA_REG   as COL_DATA,
+    COL_MANTENEDOR,
+    COL_CULTIVAR,
+    COL_FORMULARIO,
+)
 
 # ─────────────────────────────────────────────
 # 1. CARREGAMENTO E PRÉ-PROCESSAMENTO
 # ─────────────────────────────────────────────
+# O pipeline baixa o CSV do SNPC caso não exista localmente,
+# aplica toda a limpeza e retorna um DataFrame tipado.
 
-df = pd.read_csv("relatorio_cultivares.csv")
+df = carregar_dados()
 print(f"✅ Dataset carregado: {df.shape[0]:,} registros | {df.shape[1]} colunas\n")
-
-COL_DATA       = "DATA DO REGISTRO"
-COL_MANTENEDOR = "MANTENEDOR (REQUERENTE) (NOME)"
-COL_CULTIVAR   = "CULTIVAR"
-COL_FORMULARIO = "Nº FORMULÁRIO"
-
-# Converter datas
-df[COL_DATA] = pd.to_datetime(df[COL_DATA], dayfirst=True, errors="coerce")
-df["ANO"]    = df[COL_DATA].dt.year
 
 
 # ─────────────────────────────────────────────
