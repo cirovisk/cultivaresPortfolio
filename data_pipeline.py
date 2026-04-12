@@ -6,6 +6,29 @@ import numpy as np
 import pandas as pd
 import requests
 
+# ---------------------------------------------------------------------------
+# Classificação de setor — centralizada aqui para uso do db_manager e notebook
+# ---------------------------------------------------------------------------
+# Palavras-chave que identificam entidades públicas brasileiras
+_PALAVRAS_PUBLICO = [
+    "EMBRAPA", "EPAMIG", "IAC", "UFLA", "UFV", "UFPR", "UFSC", "UFRGS",
+    "UFRJ", "UFSM", "UFG", "UFMS", "UFMT", "UNB", "USP", "UNICAMP",
+    "UNESP", "FEPAGRO", "IAPAR", "IPA", "ITAL", "CEPLAC", "CENARGEN",
+    "CNPGC", "CNPAF", "PESAGRO", "EPAGRI", "EMPAER", "EMATER",
+    "EMPRESA BRASILEIRA", "EMPRESA ESTADUAL", "EMPRESA PERNAMBUCANA",
+    "UNIVERSIDADE FEDERAL", "UNIVERSIDADE ESTADUAL", "INSTITUTO FEDERAL",
+    "INSTITUTO AGRONÔMICO", "INSTITUTO DE ZOOTECNIA", "GOVERNO",
+    "SEC. ", "SECRETARIA", "PREFEITURA", "MINISTÉRIO",
+    "CIA. ", "COMPANHIA", "COOPERATIVA",  # cooperativas tratadas como público
+]
+
+# Termos que indicam origem estrangeira
+_PALAVRAS_ESTRANGEIRO = [
+    "BAYER", "BASF", "SYNGENTA", "PIONEER", "MONSANTO", "CORTEVA",
+    "LIMAGRAIN", "SAKATA", "TAKII", "ENZA ZADEN", "RIJK ZWAAN",
+    "KWS", "DSV", "EURALIS", "SEMINIS",
+]
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -39,6 +62,7 @@ COL_REGISTRO   = "Nº REGISTRO"
 COL_DATA_REG   = "DATA DO REGISTRO"
 COL_DATA_VAL   = "DATA DE VALIDADE DO REGISTRO"
 COL_MANTENEDOR = "MANTENEDOR (REQUERENTE) (NOME)"
+COL_SETOR      = "SETOR"
 
 
 def _download_csv(destino: Path, timeout: int = 180) -> None:
@@ -185,6 +209,43 @@ def _limpar(df: pd.DataFrame) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
+def classificar_setor(nome: str | None) -> str:
+    """
+    Classifica um mantenedor em Público, Privado ou Misto com base em
+    palavras-chave no nome.
+
+    Returns:
+        "Público"  — entidade pública (governo, universidade, empresa pública)
+        "Privado"  — empresa privada ou pessoa física
+        "Misto"    — quando 'nome' contém termos de ambos os grupos
+        "Nulo"     — quando nome é None / NaN
+    """
+    if not nome or pd.isna(nome):
+        return "Nulo"
+    upper = nome.upper()
+    eh_publico = any(p in upper for p in _PALAVRAS_PUBLICO)
+    # Privado: não é público e não está na lista de estrangeiros conhecidos
+    # (estrangeiros ainda são Privado — a coluna 'origem' em dim_mantenedor
+    #  é reservada para diferenciação futura)
+    if eh_publico:
+        return "Público"
+    return "Privado"
+
+
+def _adicionar_setor(df: pd.DataFrame) -> pd.DataFrame:
+    """Adiciona coluna SETOR ao DataFrame usando classificar_setor()."""
+    if COL_MANTENEDOR in df.columns:
+        df[COL_SETOR] = df[COL_MANTENEDOR].apply(classificar_setor)
+        n_pub = (df[COL_SETOR] == "Público").sum()
+        n_priv = (df[COL_SETOR] == "Privado").sum()
+        n_nulo = (df[COL_SETOR] == "Nulo").sum()
+        log.info(
+            "🏷️  Setor classificado — Público: %d | Privado: %d | Nulo: %d",
+            n_pub, n_priv, n_nulo,
+        )
+    return df
+
+
 def relatorio_qualidade(df: pd.DataFrame) -> None:
     print("\n" + "=" * 60)
     print("QUALIDADE DOS DADOS PÓS-LIMPEZA")
@@ -222,6 +283,7 @@ def carregar_dados(
     log.info("📥 Leitura bruta: %d registros | %d colunas", *df.shape)
 
     df = _limpar(df)
+    df = _adicionar_setor(df)  # ← coluna SETOR adicionada aqui
 
     if imprimir_qualidade:
         relatorio_qualidade(df)
