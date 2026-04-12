@@ -87,6 +87,31 @@ _RE_ASPAS_DUPLAS_ENVOLVENDO  = re.compile(r'^"(.*)"$')
 _RE_HTML_TAGS                = re.compile(r"<[^>]{0,30}>|</\\+>", re.IGNORECASE)
 _RE_BACKSLASH                = re.compile(r"\\+'")
 
+# ---------------------------------------------------------------------------
+# Correção de acentuação — NOME COMUM
+# Mapeamento manual de variantes sem acento (ou acento errado) para a forma
+# canônica. Gerado por varredura do dataset em 2025-04.
+# Regra de ouro: mantém a forma com mais registros no dataset original.
+# ---------------------------------------------------------------------------
+_CORR_NOME_COM: dict[str, str] = {
+    "Alocasia":   "Alocásia",
+    "Amarilis":   "Amarílis",
+    "Aralia":     "Arália",
+    "Bicuiba":    "Bicuíba",
+    "Bromelia":   "Bromélia",
+    "Cainga":     "Caingá",
+    "Catuaba":    "Catuába",
+    "Croton":     "Cróton",
+    "Euforbia":   "Eufórbia",
+    "Gipsofila":  "Gipsófila",
+    "Guaraiuva":  "Guaraiúva",
+    "Magnolia":   "Magnólia",
+    "Orquidea":   "Orquídea",
+    "OrquÍdea":   "Orquídea",   # typo com Í maiúsculo no meio
+    "Peperomia":  "Peperômia",
+    "Pera":       "Pêra",
+}
+
 
 def _limpar_coluna_texto(serie: pd.Series) -> pd.Series:
     s = serie.copy()
@@ -99,6 +124,21 @@ def _limpar_coluna_texto(serie: pd.Series) -> pd.Series:
     return s
 
 
+def _corrigir_acentos(df: pd.DataFrame) -> pd.DataFrame:
+    """Substitui variantes com acento incorreto/ausente pela forma canônica."""
+    if COL_NOME_COM in df.columns:
+        n_before = df[COL_NOME_COM].nunique()
+        df[COL_NOME_COM] = df[COL_NOME_COM].replace(_CORR_NOME_COM)
+        n_after = df[COL_NOME_COM].nunique()
+        corrigidos = n_before - n_after
+        if corrigidos:
+            log.info(
+                "✏️  Acentuação corrigida em '%s': %d variante(s) unificada(s).",
+                COL_NOME_COM, corrigidos,
+            )
+    return df
+
+
 def _limpar(df: pd.DataFrame) -> pd.DataFrame:
     log.info("🧹 Iniciando limpeza dos dados…")
 
@@ -106,6 +146,8 @@ def _limpar(df: pd.DataFrame) -> pd.DataFrame:
     for col in colunas_texto:
         if col in df.columns:
             df[col] = _limpar_coluna_texto(df[col])
+
+    df = _corrigir_acentos(df)
 
     if COL_FORMULARIO in df.columns:
         df[COL_FORMULARIO] = (
