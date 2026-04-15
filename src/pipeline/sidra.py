@@ -1,0 +1,137 @@
+import pandas as pd
+import requests
+from .base_extractor import BaseExtractor
+
+class SidraExtractor(BaseExtractor):
+    """
+    Extrator de Produção Agrícola Municipal (PAM) via SIDRA/IBGE.
+    Tabela 1612: Área plantada, colhida, qtde produzida, etc. (Lavoura Temporária)
+    Tabela 5457: Área plantada, colhida, qtde produzida, etc. (Lavoura Permanente - ex: cacau)
+    Focaremos na 1612 (que possui Soja, Milho, Trigo, Algodão, Cana-de-açúcar)
+    """
+
+    TARGET_CROPS = {
+        "soja": 40280,
+        "milho": 39444, # Pode variar (milho na grão)
+        "trigo": 40307,
+        "algodão": 39433, # algodão herbácio
+        "cana-de-açúcar": 39441
+    }
+
+    def __init__(self, ano: str = "last"):
+        super().__init__()
+        self.ano = ano
+
+    def _get_classification_codes(self) -> dict:
+        """
+        Busca metadados para garantir que temos os IDs de cada cultura.
+        A tabela 1612 usa a classificação 81 (Produto das lavouras temporárias).
+        """
+        self.log.info("Buscando metadados da tabela 1612 no IBGE...")
+        url = "https://servicodados.ibge.gov.br/api/v3/agregados/1612/metadados"
+        crops_map = {}
+        try:
+            resp = requests.get(url, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            for cls in data.get("classificacoes", []):
+                if cls["id"] == "81":
+                    for cat in cls.get("categorias", []):
+                        name_norm = self.normalize_culture_name(pd.Series([cat["nome"]])).iloc[0]
+                        # Limpar "(em grao)", "(em casca)" para mapear melhor
+                        name_clean = name_norm.split("(")[0].strip()
+                        crops_map[name_clean] = cat["id"]
+        except Exception as e:
+            self.log.warning(f"Falha ao buscar metadados, usando hardcoded. Erro: {e}")
+            return self.TARGET_CROPS
+        
+        # Filtra pelo TARGET_CROPS
+        final_map = {}
+        for target in self.TARGET_CROPS.keys():
+            t_norm = self.normalize_culture_name(pd.Series([target])).iloc[0]
+            for clean_name, cid in crops_map.items():
+                if t_norm in clean_name:
+                    final_map[t_norm] = cid
+                    break
+            if t_norm not in final_map: # Fallback
+                final_map[t_norm] = self.TARGET_CROPS[target]
+                
+        return final_map
+
+    def extract(self) -> pd.DataFrame:
+        crops_ids = self._get_classification_codes()
+        all_dfs = []
+        
+        # Puxaremos variáveis principais: 
+        # 109 - Área plantada, 216 - Área colhida, 214 - Qtde produzida
+        # p=last (último ano), n6=all (todos os municípios)
+        variables = "109,216,214"
+        
+        for crop_name, crop_id in crops_ids.items():
+            self.log.info(f"Buscando dados IBGE para {crop_name} (ID: {crop_id})")
+            
+            # Formato APISIDRA: /values/t/1612/n6/all/v/109,216,214/p/last/c81/{crop_id}
+            url = f"https://apisidra.ibge.gov.br/values/t/1612/n6/all/v/{variables}/p/{self.ano}/c81/{crop_id}"
+            
+            try:
+                resp = requests.get(url, timeout=30)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if data and len(data) > 1:
+                        df_tmp = pd.DataFrame(data[1:], columns=data[0])
+                        df_tmp["cultura_raw"] = crop_name
+                        all_dfs.append(df_tmp)
+                else:
+                    self.log.warning(f"Erro {resp.status_code} na consulta de {crop_name}: {resp.text}")
+            except Exception as e:
+                self.log.error(f"Exceção ao buscar {crop_name}: {e}")
+        
+        if not all_dfs:
+            return pd.DataFrame()
+            
+        return pd.concat(all_dfs, ignore_index=True)
+
+    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+            
+        # As colunas do SIDRA são nomes longos, vamos padronizar
+        col_map = {
+            "D2N": "variavel",
+            "V": "valor",
+            "D1C": "cod_municipio_ibge",
+            "D1N": "municipio_nome",
+            "D3N": "ano",
+            "cultura_raw": "cultura"
+        }
+        
+        df_clean = df.rename(columns=col_map)
+        df_clean = df_clean[list(col_map.values())].copy()
+        
+        # Tratar os valores nulos do IBGE ('...' ou '-')
+        import numpy as np
+        df_clean["valor"] = pd.to_numeric(df_clean["valor"].replace(['...', '-'], np.nan), errors='coerce')
+        
+        # O SIDRA retorna linhas para cada variável. Vamos pivotar para ter colunas por variável
+        df_pivot = df_clean.pivot_table(
+            index=["cod_municipio_ibge", "municipio_nome", "ano", "cultura"],
+            columns="variavel",
+            values="valor"
+        ).reset_index()
+        
+        # Limpar o nome das variáveis para os nomes de colunas usando snake_case
+        df_pivot.columns.name = None
+        
+        var_renames = {}
+        for c in df_pivot.columns:
+            if "Área plantada" in c: var_renames[c] = "area_plantada_ha"
+            elif "Área colhida" in c: var_renames[c] = "area_colhida_ha"
+            elif "Quantidade" in c: var_renames[c] = "qtde_produzida_ton"
+            elif "Valor da produ" in c: var_renames[c] = "valor_producao_mil_reais"
+            
+        df_pivot = df_pivot.rename(columns=var_renames)
+        
+        # Normaliza a cultura
+        df_pivot["cultura"] = self.normalize_culture_name(df_pivot["cultura"])
+        
+        return df_pivot

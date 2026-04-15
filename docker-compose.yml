@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cultivares_pg
+    environment:
+      POSTGRES_USER: cultivares_user
+      POSTGRES_PASSWORD: cultivares_password
+      POSTGRES_DB: cultivares_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:
