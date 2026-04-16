@@ -94,11 +94,11 @@ class CultivaresExtractor(BaseExtractor):
                 s["NOME SECUNDÁRIO"] = pd.NA
 
         # Normalizar Cultura (NOME COMUM e GRUPO DA ESPÉCIE) para bater com SIDRA/ZARC
-        # O modelo SIDRA foca no nome comum padronizado. O RNC tem "GRUPO DA ESPÉCIE". Vamos preferir o Grupo.
-        if "GRUPO DA ESPÉCIE" in s.columns:
-            s["CULTURA_NORMALIZADA"] = self.normalize_culture_name(s["GRUPO DA ESPÉCIE"])
-        elif "NOME COMUM" in s.columns:
+        # O modelo SIDRA foca no nome comum padronizado. 
+        if "NOME COMUM" in s.columns:
             s["CULTURA_NORMALIZADA"] = self.normalize_culture_name(s["NOME COMUM"])
+        elif "GRUPO DA ESPÉCIE" in s.columns:
+            s["CULTURA_NORMALIZADA"] = self.normalize_culture_name(s["GRUPO DA ESPÉCIE"])
 
         # Datas
         for c in ["DATA DO REGISTRO", "DATA DE VALIDADE DO REGISTRO"]:

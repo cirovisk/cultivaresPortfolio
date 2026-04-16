@@ -1,9 +1,22 @@
+import argparse
 import logging
+import concurrent.futures
+import pandas as pd
 from sqlalchemy import text
 from pipeline.cultivares import CultivaresExtractor
 from pipeline.sidra import SidraExtractor
 from pipeline.zarc import ZarcExtractor
-from db.manager import init_db, get_db, engine, DimCultura, DimMunicipio, DimMantenedor
+from pipeline.conab import ConabExtractor
+from pipeline.agrofit import AgrofitExtractor
+from db.manager import init_db, get_db, engine, DimCultura, DimMunicipio, DimMantenedor, FatoProducaoConab, FatoAgrofit
+
+EXTRACTORS = {
+    "cultivares": CultivaresExtractor,
+    "sidra": SidraExtractor,
+    "zarc": ZarcExtractor,
+    "conab": ConabExtractor,
+    "agrofit": AgrofitExtractor
+}
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
@@ -78,28 +91,64 @@ def preencher_dimensao_municipio(db, df_pam, df_zarc):
 def clear_facts():
     # Truncate tables to allow safe re-run
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE TABLE fato_registro_cultivares, fato_producao_pam, fato_risco_zarc RESTART IDENTITY CASCADE;"))
+        conn.execute(text("TRUNCATE TABLE fato_registro_cultivares, fato_producao_pam, fato_risco_zarc, fato_producao_conab, fato_agrofit RESTART IDENTITY CASCADE;"))
         log.info("Tabelas Fato truncadas para recarga segura.")
 
 def main():
+    parser = argparse.ArgumentParser(description="Pipeline Agro-Dados")
+    parser.add_argument("--sources", nargs="+", choices=EXTRACTORS.keys(), default=list(EXTRACTORS.keys()), help="Fontes de dados a serem extraídas")
+    args = parser.parse_args()
+
     log.info("--- Iniciando Orquestração do Pipeline Agro ---")
+    log.info(f"Fontes selecionadas: {args.sources}")
     init_db()
     db = next(get_db())
     clear_facts()
     
     culturas_alvo = ["soja", "milho", "trigo", "algodão", "cana-de-açúcar"]
     
-    # Extrações
-    ext_cult = CultivaresExtractor(use_cache=True)
-    df_cult = ext_cult.run()
-    
-    ext_sidra = SidraExtractor(ano="2022")
-    ext_sidra.TARGET_CROPS = {k: ext_sidra.TARGET_CROPS[k] for k in culturas_alvo if k in ext_sidra.TARGET_CROPS}
-    df_pam = ext_sidra.run()
-    
-    ext_zarc = ZarcExtractor()
-    ext_zarc.TARGET_CROPS = [c.replace("ç", "c").replace("ã", "a") for c in culturas_alvo]
-    df_zarc = ext_zarc.run()
+    # Instanciar os extratores selecionados
+    instances = {}
+    for source in args.sources:
+        if source == "cultivares":
+            instances[source] = CultivaresExtractor(use_cache=True)
+        elif source == "sidra":
+            ext = SidraExtractor(ano="2022")
+            ext.TARGET_CROPS = {k: ext.TARGET_CROPS[k] for k in culturas_alvo if k in ext.TARGET_CROPS}
+            instances[source] = ext
+        elif source == "zarc":
+            ext = ZarcExtractor()
+            ext.TARGET_CROPS = [c.replace("ç", "c").replace("ã", "a") for c in culturas_alvo]
+            instances[source] = ext
+        elif source == "conab":
+            instances[source] = ConabExtractor()
+        elif source == "agrofit":
+            instances[source] = AgrofitExtractor()
+
+
+
+    # Executar extrações em paralelo
+    log.info("Executando extrações em paralelo...")
+    dfs = {}
+    if instances:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(instances)) as executor:
+            future_to_source = {executor.submit(ext.run): source for source, ext in instances.items()}
+            for future in concurrent.futures.as_completed(future_to_source):
+                source = future_to_source[future]
+                try:
+                    dfs[source] = future.result()
+                    log.info(f"Extração {source} finalizada.")
+                except Exception as exc:
+                    log.error(f"Extrator {source} gerou erro: {exc}")
+                    dfs[source] = pd.DataFrame()
+
+    df_cult = dfs.get("cultivares", pd.DataFrame())
+    df_pam = dfs.get("sidra", pd.DataFrame())
+    df_zarc = dfs.get("zarc", pd.DataFrame())
+    df_conab = dfs.get("conab", pd.DataFrame())
+    df_agrofit = dfs.get("agrofit", pd.DataFrame())
+
+
     
     # 1. Carregar Dimensões e buscar Mapas de IDs
     log.info("Carregando Dimensões (Cultura, Mantenedor, Município)...")
@@ -110,10 +159,29 @@ def main():
     # 2. Transformar Fatos substituindo chaves naturais por chaves estrangeiras
     log.info("Mapeando Chaves Estrangeiras nas Tabelas Fato...")
     
+    # Helper para mapeamento flexível de cultura
+    def get_cultura_id(nome_cultura, mapping):
+        if not nome_cultura: return None
+        
+        def norm(s):
+            import unicodedata
+            s = str(s).lower().strip()
+            return "".join(c for c in unicodedata.normalize('NFKD', s) if unicodedata.category(c) != 'Mn')
+
+        # Tenta match exato primeiro
+        if nome_cultura in mapping: return mapping[nome_cultura]
+        
+        nombre_norm = norm(nome_cultura)
+        for alvo, cid in mapping.items():
+            alvo_norm = norm(alvo)
+            if alvo_norm in nombre_norm or nombre_norm in alvo_norm:
+                return cid
+        return None
+
     # -- Cultivares --
     if not df_cult.empty:
         df_cult_f = df_cult.copy()
-        df_cult_f["id_cultura"] = df_cult_f["cultura"].map(map_cult)
+        df_cult_f["id_cultura"] = df_cult_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
         df_cult_f["id_mantenedor"] = df_cult_f["mantenedor"].map(map_mant)
         
         cols_cult = ["nr_registro", "id_cultura", "id_mantenedor", "cultivar", "nome_secundario", 
@@ -127,7 +195,7 @@ def main():
     # -- PAM --
     if not df_pam.empty:
         df_pam_f = df_pam.copy()
-        df_pam_f["id_cultura"] = df_pam_f["cultura"].map(map_cult)
+        df_pam_f["id_cultura"] = df_pam_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
         # PAM IBGE -> codigo ibge = string, cut to 7 if necessary
         df_pam_f["cod_municipio_ibge"] = df_pam_f["cod_municipio_ibge"].astype(str).str[:7]
         df_pam_f["id_municipio"] = df_pam_f["cod_municipio_ibge"].map(map_mun)
@@ -143,7 +211,7 @@ def main():
     # -- ZARC --
     if not df_zarc.empty:
         df_zarc_f = df_zarc.copy()
-        df_zarc_f["id_cultura"] = df_zarc_f["cultura"].map(map_cult)
+        df_zarc_f["id_cultura"] = df_zarc_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
         df_zarc_f["cod_municipio_ibge"] = df_zarc_f["cod_municipio_ibge"].astype(str).str[:7]
         df_zarc_f["id_municipio"] = df_zarc_f["cod_municipio_ibge"].map(map_mun)
         
@@ -163,6 +231,36 @@ def main():
         
         df_zarc_f.to_sql("fato_risco_zarc", engine, if_exists="append", index=False)
         log.info(f"Fato Risco ZARC: inseridos {len(df_zarc_f)} registros.")
+
+    # -- CONAB --
+    if not df_conab.empty:
+        df_conab_f = df_conab.copy()
+        df_conab_f["id_cultura"] = df_conab_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
+        
+        # Filtramos para as culturas que temos na dimensão (as alvo)
+        df_conab_f = df_conab_f.dropna(subset=["id_cultura"])
+        
+        cols_conab = ["id_cultura", "uf", "ano_agricola", "safra", "area_plantada_mil_ha", "producao_mil_t", "produtividade_t_ha"]
+        df_conab_f = df_conab_f[cols_conab]
+        
+        df_conab_f.to_sql("fato_producao_conab", engine, if_exists="append", index=False)
+        log.info(f"Fato Produção CONAB: inseridos {len(df_conab_f)} registros.")
+
+    # -- Agrofit --
+    if not df_agrofit.empty:
+        df_agrofit_f = df_agrofit.copy()
+        df_agrofit_f["id_cultura"] = df_agrofit_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
+        
+        # Filtramos para as culturas que temos na dimensão (as alvo)
+        df_agrofit_f = df_agrofit_f.dropna(subset=["id_cultura"])
+        
+        cols_agro = ["id_cultura", "nr_registro", "marca_comercial", "ingrediente_ativo", 
+                     "titular_registro", "classe", "situacao", "praga_comum"]
+        df_agrofit_f = df_agrofit_f[cols_agro]
+        
+        # O Agrofit pode ter duplicatas devido ao cruzamento Cultura x Praga, vamos manter assim por enquanto
+        df_agrofit_f.to_sql("fato_agrofit", engine, if_exists="append", index=False)
+        log.info(f"Fato Agrofit: inseridos {len(df_agrofit_f)} registros.")
 
     log.info("--- Pipeline Concluído ---")
 

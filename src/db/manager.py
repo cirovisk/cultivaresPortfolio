@@ -77,6 +77,31 @@ class FatoRiscoZARC(Base):
     risco_climatico = Column(String)
     atualizado_em = Column(DateTime, server_default=func.now())
 
+class FatoProducaoConab(Base):
+    __tablename__ = "fato_producao_conab"
+    id_conab = Column(Integer, primary_key=True, autoincrement=True)
+    id_cultura = Column(Integer, ForeignKey("dim_cultura.id_cultura"))
+    uf = Column(String(2))
+    ano_agricola = Column(String(10))
+    safra = Column(String(20))
+    area_plantada_mil_ha = Column(Float)
+    producao_mil_t = Column(Float)
+    produtividade_t_ha = Column(Float)
+    atualizado_em = Column(DateTime, server_default=func.now())
+
+class FatoAgrofit(Base):
+    __tablename__ = "fato_agrofit"
+    id_agrofit = Column(Integer, primary_key=True, autoincrement=True)
+    id_cultura = Column(Integer, ForeignKey("dim_cultura.id_cultura"))
+    nr_registro = Column(String(20))
+    marca_comercial = Column(String)
+    ingrediente_ativo = Column(String)
+    titular_registro = Column(String)
+    classe = Column(String)
+    situacao = Column(String)
+    praga_comum = Column(String)
+    atualizado_em = Column(DateTime, server_default=func.now())
+
 # ---------------------------------------------------------------------------
 # Funções de Gerenciamento
 # ---------------------------------------------------------------------------

@@ -44,9 +44,28 @@ class ZarcExtractor(BaseExtractor):
                         if csv_url:
                             self.log.info(f"Fazendo download de: {csv_url}")
                             # Algumas URLs exigem GET com User Agent para contornar firewall corporativo
-                            resp_csv = requests.get(csv_url, headers=headers, stream=True)
+                            resp_csv = requests.get(csv_url, headers=headers, timeout=60)
                             resp_csv.raise_for_status()
-                            df_crop = pd.read_csv(io.BytesIO(resp_csv.content), sep=';', encoding='utf-8', on_bad_lines='skip', compression='infer')
+                            
+                            # Tentar ler com detecção automática de compressão
+                            try:
+                                df_crop = pd.read_csv(
+                                    io.BytesIO(resp_csv.content), 
+                                    sep=';', 
+                                    encoding='utf-8', 
+                                    on_bad_lines='skip', 
+                                    compression='infer'
+                                )
+                            except Exception:
+                                # Fallback para gzip explícito caso o infer falhe mas os bytes indiquem gzip
+                                df_crop = pd.read_csv(
+                                    io.BytesIO(resp_csv.content), 
+                                    sep=';', 
+                                    encoding='utf-8', 
+                                    on_bad_lines='skip', 
+                                    compression='gzip'
+                                )
+                                
                             df_crop["cultura_raw"] = crop
                             all_dfs.append(df_crop)
                         else:

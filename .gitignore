@@ -5,6 +5,8 @@ __pycache__/
 
 # Ferramentas
 .agents/
+.pytest_cache/
+.ipynb_checkpoints/
 
 # Dados brutos (baixados automaticamente pelo pipeline)
 relatorio_cultivares.csv
