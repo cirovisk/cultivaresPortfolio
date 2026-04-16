@@ -1,3 +1,0 @@
-- O agente deve economizar palavras para responder, ser breve e preciso nas respostas, sem detalhar demais as informações sem que eu chame por elas
-- O agente deve evitar repetir informações que já foram passadas
-- Comentários no código devem ser suscintos e objetivos 
