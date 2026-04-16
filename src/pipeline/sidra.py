@@ -4,10 +4,8 @@ from .base_extractor import BaseExtractor
 
 class SidraExtractor(BaseExtractor):
     """
-    Extrator de Produção Agrícola Municipal (PAM) via SIDRA/IBGE.
-    Tabela 1612: Área plantada, colhida, qtde produzida, etc. (Lavoura Temporária)
-    Tabela 5457: Área plantada, colhida, qtde produzida, etc. (Lavoura Permanente - ex: cacau)
-    Focaremos na 1612 (que possui Soja, Milho, Trigo, Algodão, Cana-de-açúcar)
+    Extrator PAM: Produção Agrícola Municipal (SIDRA/IBGE).
+    Tabela 1612: Lavouras Temporárias.
     """
 
     TARGET_CROPS = {
@@ -24,8 +22,7 @@ class SidraExtractor(BaseExtractor):
 
     def _get_classification_codes(self) -> dict:
         """
-        Busca metadados para garantir que temos os IDs de cada cultura.
-        A tabela 1612 usa a classificação 81 (Produto das lavouras temporárias).
+        Metadados: Consulta de IDs de categoria no IBGE.
         """
         self.log.info("Buscando metadados da tabela 1612 no IBGE...")
         url = "https://servicodados.ibge.gov.br/api/v3/agregados/1612/metadados"
@@ -38,7 +35,7 @@ class SidraExtractor(BaseExtractor):
                 if cls["id"] == "81":
                     for cat in cls.get("categorias", []):
                         name_norm = self.normalize_culture_name(pd.Series([cat["nome"]])).iloc[0]
-                        # Limpar "(em grao)", "(em casca)" para mapear melhor
+                        # Normalização: Remoção de sufixos (ex: "em grão")
                         name_clean = name_norm.split("(")[0].strip()
                         crops_map[name_clean] = cat["id"]
         except Exception as e:
@@ -62,9 +59,7 @@ class SidraExtractor(BaseExtractor):
         crops_ids = self._get_classification_codes()
         all_dfs = []
         
-        # Puxaremos variáveis principais: 
-        # 109 - Área plantada, 216 - Área colhida, 214 - Qtde produzida
-        # p=last (último ano), n6=all (todos os municípios)
+        # Variáveis: 109 (Área Plantada), 216 (Área Colhida), 214 (Produção)
         variables = "109,216,214"
         
         for crop_name, crop_id in crops_ids.items():
@@ -95,7 +90,7 @@ class SidraExtractor(BaseExtractor):
         if df.empty:
             return df
             
-        # As colunas do SIDRA são nomes longos, vamos padronizar
+        # Transformação: Mapeamento de colunas SIDRA
         col_map = {
             "D2N": "variavel",
             "V": "valor",
@@ -108,12 +103,11 @@ class SidraExtractor(BaseExtractor):
         df_clean = df.rename(columns=col_map)
         df_clean = df_clean[list(col_map.values())].copy()
         
-        # Tratar os valores nulos do IBGE ('...' ou '-')
+        # Sanitização: Conversão de nulos IBGE ('...', '-') para NaN
         import numpy as np
         df_clean["valor"] = pd.to_numeric(df_clean["valor"].replace(['...', '-'], np.nan), errors='coerce')
         
-        # O SIDRA retorna linhas para cada variável. Vamos pivotar para ter colunas por variável.
-        # Não usamos dropna=False aqui pois isso pode gerar um produto cartesiano de todos os mun/ano/cultura.
+        # Transformação: Pivoteamento de variáveis para colunas fato
         df_pivot = df_clean.pivot_table(
             index=["cod_municipio_ibge", "municipio_nome", "ano", "cultura"],
             columns="variavel",
@@ -123,7 +117,7 @@ class SidraExtractor(BaseExtractor):
         # Limpar o nome das variáveis para os nomes de colunas usando snake_case
         df_pivot.columns.name = None
         
-        # Mapeamento para garantir que as colunas existam mesmo se o IBGE não retornar dados (ex: área colhida nula)
+        # Transformação: Normalização de nomes de variáveis fato
         var_renames = {
             "Área plantada": "area_plantada_ha",
             "Área colhida": "area_colhida_ha",
