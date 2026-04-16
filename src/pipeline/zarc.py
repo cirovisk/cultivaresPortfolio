@@ -1,86 +1,78 @@
 import pandas as pd
 import requests
-from .base_extractor import BaseExtractor
+import os
 import io
+from pathlib import Path
+from .base_extractor import BaseExtractor
 
 class ZarcExtractor(BaseExtractor):
     """
     Extrator ZARC: Zoneamento Agrícola de Risco Climático (MAPA).
-    Tabelas de risco por solo e decêndio.
+    Tabelas de risco por solo e decêndio com suporte a cache.
     """
 
     TARGET_CROPS = ["soja", "milho", "trigo", "algodao", "cana-de-acucar"]
     
-    def __init__(self):
+    def __init__(self, use_cache: bool = True, data_dir: str = "data/zarc"):
         super().__init__()
+        self.use_cache = use_cache
+        self.data_dir = Path(data_dir).resolve()
+        self.data_dir.mkdir(parents=True, exist_ok=True)
         
     def extract(self) -> pd.DataFrame:
         all_dfs = []
         
         for crop in self.TARGET_CROPS:
-            self.log.info(f"Buscando recurso ZARC no CKAN (dados.agricultura.gov.br) para: {crop}")
+            cache_file = self.data_dir / f"zarc_{crop}.csv"
             
-            # CKAN API: Busca de pacotes no Portal de Dados Abertos
-            # É comum usar termos mais amplos, como zarc e o nome da cultura
+            # Smart Refresh Logic
+            if self.use_cache and cache_file.exists() and not self.is_file_stale(str(cache_file), 30):
+                self.log.info(f"Usando cache ZARC para {crop}...")
+                all_dfs.append(pd.read_csv(cache_file, sep=';', encoding='utf-8', on_bad_lines='skip'))
+                continue
+
+            self.log.info(f"Buscando recurso ZARC no CKAN para: {crop}")
             query = f'title:zarc AND ({crop} OR {crop.capitalize()})'
             ckan_url = f"https://dados.agricultura.gov.br/api/3/action/package_search?q={query}&rows=1"
-            
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
             
             try:
                 resp = requests.get(ckan_url, headers=headers, timeout=20)
                 if resp.status_code == 200:
-                    data = resp.json()
-                    results = data.get("result", {}).get("results", [])
+                    results = resp.json().get("result", {}).get("results", [])
                     if results:
-                        package = results[0]
-                        # Metadata Parsing: Busca de recurso CSV
                         csv_url = None
-                        for resource in package.get("resources", []):
+                        for resource in results[0].get("resources", []):
                             if resource.get("format", "").upper() in ["CSV", "CSV.GZ", "GZ"]:
                                 csv_url = resource.get("url")
                                 break
                                 
                         if csv_url:
-                            self.log.info(f"Fazendo download de: {csv_url}")
-                            # Algumas URLs exigem GET com User Agent para contornar firewall corporativo
                             resp_csv = requests.get(csv_url, headers=headers, timeout=60)
                             resp_csv.raise_for_status()
                             
-                            # I/O: Leitura com inferência de compressão (zip/gzip)
-                            try:
-                                df_crop = pd.read_csv(
-                                    io.BytesIO(resp_csv.content), 
-                                    sep=';', 
-                                    encoding='utf-8', 
-                                    on_bad_lines='skip', 
-                                    compression='infer'
-                                )
-                            except Exception:
-                                # Fallback: Descompressão explícita (gzip)
-                                df_crop = pd.read_csv(
-                                    io.BytesIO(resp_csv.content), 
-                                    sep=';', 
-                                    encoding='utf-8', 
-                                    on_bad_lines='skip', 
-                                    compression='gzip'
-                                )
+                            # Salva no cache para uso futuro
+                            with open(cache_file, "wb") as f:
+                                f.write(resp_csv.content)
                                 
+                            df_crop = pd.read_csv(
+                                io.BytesIO(resp_csv.content), 
+                                sep=';', 
+                                encoding='utf-8', 
+                                on_bad_lines='skip', 
+                                compression='infer'
+                            )
                             df_crop["cultura_raw"] = crop
                             all_dfs.append(df_crop)
-                        else:
-                            self.log.warning(f"Nenhum CSV encontrado no pacote ZARC para: {crop}")
-                    else:
-                        self.log.warning(f"Nenhum dataset ZARC retornado para: {crop}")
             except Exception as e:
                 self.log.error(f"Erro ao buscar ZARC para {crop}: {e}")
+                if cache_file.exists():
+                    all_dfs.append(pd.read_csv(cache_file, sep=';', encoding='utf-8'))
 
         if not all_dfs:
             return pd.DataFrame()
             
-        # Transformação: Consolidação de múltiplos recursos
-        df_concat = pd.concat(all_dfs, ignore_index=True)
-        return df_concat
+        return pd.concat(all_dfs, ignore_index=True)
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
@@ -88,7 +80,7 @@ class ZarcExtractor(BaseExtractor):
             
         df_clean = df.copy()
         
-        # Normalização: Sanitização de cabeçalhos (Snake Case / ASCII)
+        # Normalização: Sanitização de cabeçalhos
         df_clean.columns = (
             df_clean.columns.str.lower()
             .str.replace(" ", "_")
@@ -98,12 +90,10 @@ class ZarcExtractor(BaseExtractor):
             .str.decode('utf-8')
         )
         
-        # Mapeamento: Identificação de coluna de código IBGE
         col_ibge = [c for c in df_clean.columns if "ibge" in c or "cd_mun" in c or "codigo_mun" in c]
         if col_ibge:
             df_clean = df_clean.rename(columns={col_ibge[0]: "cod_municipio_ibge"})
         
-        # Vamos normalizar a cultura raw inserida no extract
         if "cultura_raw" in df_clean.columns:
             df_clean["cultura"] = self.normalize_culture_name(df_clean["cultura_raw"])
             df_clean = df_clean.drop(columns=["cultura_raw"])

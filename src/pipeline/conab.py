@@ -1,44 +1,114 @@
 import pandas as pd
 import requests
+import os
 from io import StringIO
 from .base_extractor import BaseExtractor
 
 class ConabExtractor(BaseExtractor):
     """
-    Extrator CONAB: Série Histórica de Produção de Grãos.
+    Extrator Multimodal CONAB: Produção e Preços.
     """
     
-    DATA_URL = "https://portaldeinformacoes.conab.gov.br/downloads/arquivos/SerieHistoricaGraos.txt"
+    BASE_URL = "https://portaldeinformacoes.conab.gov.br/downloads/arquivos/"
+    
+    FILES = {
+        "producao_historica": "SerieHistoricaGraos.txt",
+        "producao_estimativa": "LevantamentoGraos.txt",
+        "precos_uf_mensal": "PrecosMensalUF.txt",
+        "precos_mun_mensal": "PrecosMensalMunicipio.txt",
+        "precos_uf_semanal": "PrecosSemanalUF.txt",
+        "precos_mun_semanal": "PrecosSemanalMunicipio.txt"
+    }
 
-    def extract(self) -> pd.DataFrame:
-        self.log.info(f"Baixando dados da CONAB de: {self.DATA_URL}")
-        try:
-            resp = requests.get(self.DATA_URL, timeout=60)
-            resp.raise_for_status()
+    def __init__(self, data_dir="data/conab", force_refresh=False):
+        super().__init__()
+        self.data_dir = data_dir
+        self.force_refresh = force_refresh
+        # Garante que o diretório existe (Persistence check)
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir, exist_ok=True)
+
+    def extract(self) -> dict:
+        """
+        Extrai todos os arquivos configurados. 
+        Implementa política de atualização automática: se o arquivo não existe, baixa.
+        """
+        dataframes = {}
+        for key, filename in self.FILES.items():
+            local_path = os.path.join(self.data_dir, filename)
             
-            # I/O: Parsing de CSV delimitado por ";"
-            df = pd.read_csv(
-                StringIO(resp.text),
-                sep=";",
-                encoding="utf-8",
-                dtype=str,
-                skipinitialspace=True
-            )
-            return df
-        except Exception as e:
-            self.log.error(f"Falha ao baixar dados da CONAB: {e}")
-            return pd.DataFrame()
-
-    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
-        if df.empty:
-            return df
-
-        self.log.info("Limpando e transformando dados da CONAB...")
+            # Lógica de atualização inteligente:
+            is_stale = self.is_file_stale(local_path, threshold_days=(7 if "semanal" in key else 30))
+            
+            if self.force_refresh or not os.path.exists(local_path) or is_stale:
+                reason = "forçado" if self.force_refresh else ("ausente" if not os.path.exists(local_path) else "desatualizado")
+                self.log.info(f"Atualizando {filename} ({reason})...")
+                self._download_file(filename, local_path)
+            
+            if os.path.exists(local_path):
+                self.log.info(f"Carregando {filename} para memória...")
+                try:
+                    df = pd.read_csv(
+                        local_path,
+                        sep=";",
+                        encoding="utf-8",
+                        dtype=str,
+                        skipinitialspace=True
+                    )
+                    dataframes[key] = df
+                except Exception as e:
+                    self.log.error(f"Erro ao ler {filename}: {e}")
         
-        # Sanitização: Remoção de whitespaces
-        df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
+        return dataframes
 
-        # Transformação: Mapeamento de colunas
+    def _download_file(self, filename, local_path):
+        url = self.BASE_URL + filename
+        
+        # Arquivamento (apenas para Mensais e Produção/Histórico)
+        if os.path.exists(local_path) and "semanal" not in filename:
+            import shutil
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archive_dir = os.path.join(self.data_dir, "archive")
+            os.makedirs(archive_dir, exist_ok=True)
+            archive_path = os.path.join(archive_dir, f"{os.path.splitext(filename)[0]}_{timestamp}.txt")
+            shutil.move(local_path, archive_path)
+            self.log.info(f"Arquivo antigo arquivado: {os.path.basename(archive_path)}")
+
+        try:
+            resp = requests.get(url, timeout=120)
+            resp.raise_for_status()
+            with open(local_path, "wb") as f:
+                f.write(resp.content)
+            self.log.info(f"Download concluído: {filename}")
+        except Exception as e:
+            self.log.error(f"Erro no download de {url}: {e}")
+
+    def transform(self, dataframes: dict) -> dict:
+        """
+        Transformação polimórfica baseada na chave do dataset.
+        """
+        processed = {}
+        
+        # 1. Produção
+        for key in ["producao_historica", "producao_estimativa"]:
+            if key in dataframes:
+                processed[key] = self._transform_producao(dataframes[key])
+        
+        # 2. Preços Mensais
+        for key in ["precos_uf_mensal", "precos_mun_mensal"]:
+            if key in dataframes:
+                processed[key] = self._transform_precos(dataframes[key], freq="mensal")
+
+        # 3. Preços Semanais
+        for key in ["precos_uf_semanal", "precos_mun_semanal"]:
+            if key in dataframes:
+                processed[key] = self._transform_precos(dataframes[key], freq="semanal")
+
+        return processed
+
+    def _transform_producao(self, df):
+        df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
         renames = {
             "ano_agricola": "ano_agricola",
             "dsc_safra_previsao": "safra",
@@ -48,20 +118,50 @@ class ConabExtractor(BaseExtractor):
             "producao_mil_t": "producao_mil_t",
             "produtividade_mil_ha_mil_t": "produtividade_t_ha"
         }
-        
         df = df.rename(columns=renames)
-        
-        # Transformação: Casting de tipos numéricos
         cols_num = ["area_plantada_mil_ha", "producao_mil_t", "produtividade_t_ha"]
         for col in cols_num:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        
+        df["cultura"] = self.normalize_culture_name(df["produto_raw"])
+        cols_final = ["ano_agricola", "safra", "uf", "cultura", "area_plantada_mil_ha", "producao_mil_t", "produtividade_t_ha"]
+        return df[cols_final]
 
-        # Normalizar nome da cultura
+    def _transform_precos(self, df, freq="mensal"):
+        df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
+        renames = {
+            "produto": "produto_raw",
+            "uf": "uf",
+            "nom_municipio": "municipio",
+            "cod_ibge": "cod_municipio_ibge",
+            "ano": "ano",
+            "mes": "mes",
+            "valor_produto_kg": "valor_kg",
+            "dsc_nivel_comercializacao": "nivel_comercializacao",
+            "semana": "semana",
+            "data_inicial_final_semana": "data_referencia"
+        }
+        df = df.rename(columns=renames)
+        
+        # Casting e Limpeza
+        df["valor_kg"] = pd.to_numeric(df["valor_kg"].str.replace(",", "."), errors="coerce").fillna(0.0)
+        df["ano"] = pd.to_numeric(df["ano"], errors="coerce").fillna(0).astype(int)
+        df["mes"] = pd.to_numeric(df["mes"], errors="coerce").fillna(0).astype(int)
         df["cultura"] = self.normalize_culture_name(df["produto_raw"])
         
-        # Filtro básico (opcional: podemos filtrar no main ou aqui)
-        # Seleção: Filtro de colunas relevantes
-        cols_final = ["ano_agricola", "safra", "uf", "cultura", "area_plantada_mil_ha", "producao_mil_t", "produtividade_t_ha"]
-        df = df[cols_final]
+        cols = ["cultura", "uf", "ano", "mes", "valor_kg", "nivel_comercializacao"]
+        if "cod_municipio_ibge" in df.columns:
+            cols.append("cod_municipio_ibge")
+            df["cod_municipio_ibge"] = df["cod_municipio_ibge"].str.strip()
+            
+        if freq == "semanal":
+            cols.extend(["semana", "data_referencia"])
+            df["semana"] = pd.to_numeric(df["semana"], errors="coerce").fillna(0).astype(int)
+        
+        return df[cols]
 
-        return df
+    def run(self) -> dict:
+        """Override do BaseExtractor para suportar retorno múltiplo."""
+        self.log.info("Iniciando extração e transformação CONAB...")
+        data = self.extract()
+        return self.transform(data)

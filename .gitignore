@@ -8,10 +8,8 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 
-# Dados brutos (baixados automaticamente pelo pipeline)
-relatorio_cultivares.csv
-data/*.csv
-data/*.ddb
+# Dados e Cache (baixados automaticamente pelo pipeline)
+data/
 
 # Scripts temporários e logs
 scratch*.py

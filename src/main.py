@@ -8,7 +8,8 @@ from pipeline.sidra import SidraExtractor
 from pipeline.zarc import ZarcExtractor
 from pipeline.conab import ConabExtractor
 from pipeline.agrofit import AgrofitExtractor
-from db.manager import init_db, get_db, engine, DimCultura, DimMunicipio, DimMantenedor, FatoProducaoConab, FatoAgrofit
+from db.manager import init_db, get_db, engine, DimCultura, DimMunicipio, DimMantenedor, FatoProducaoConab, FatoAgrofit, FatoPrecoConabMensal, FatoPrecoConabSemanal, FatoCultivar, FatoProducaoPAM, FatoRiscoZARC
+from sqlalchemy.dialects.postgresql import insert
 
 EXTRACTORS = {
     "cultivares": CultivaresExtractor,
@@ -90,19 +91,22 @@ def preencher_dimensao_municipio(db, df_pam, df_zarc):
 def clear_facts():
     # DDL: Limpeza de tabelas fato (Safe re-run)
     with engine.begin() as conn:
+        # Tabelas de produção/registro podem ser truncadas pois os arquivos geralmente trazem o histórico completo.
+        # Tabelas de preço são mantidas para acumular série histórica (conforme pedido pelo USER).
         conn.execute(text("TRUNCATE TABLE fato_registro_cultivares, fato_producao_pam, fato_risco_zarc, fato_producao_conab, fato_agrofit RESTART IDENTITY CASCADE;"))
-        log.info("Tabelas Fato truncadas para recarga segura.")
+        log.info("Tabelas Fato (exceto Preços) truncadas para recarga segura.")
 
 def main():
     parser = argparse.ArgumentParser(description="Pipeline Agro-Dados")
     parser.add_argument("--sources", nargs="+", choices=EXTRACTORS.keys(), default=list(EXTRACTORS.keys()), help="Fontes de dados a serem extraídas")
+    parser.add_argument("--refresh-conab", action="store_true", help="Força o download dos arquivos CONAB")
     args = parser.parse_args()
 
     log.info("--- Iniciando Orquestração do Pipeline Agro ---")
     log.info(f"Fontes selecionadas: {args.sources}")
     init_db()
     db = next(get_db())
-    clear_facts()
+    # clear_facts() # Removido para suportar carga incremental conforme pedido pelo USER
     
     culturas_alvo = ["soja", "milho", "trigo", "algodão", "cana-de-açúcar"]
     
@@ -120,7 +124,7 @@ def main():
             ext.TARGET_CROPS = [c.replace("ç", "c").replace("ã", "a") for c in culturas_alvo]
             instances[source] = ext
         elif source == "conab":
-            instances[source] = ConabExtractor()
+            instances[source] = ConabExtractor(force_refresh=args.refresh_conab)
         elif source == "agrofit":
             instances[source] = AgrofitExtractor()
 
@@ -177,6 +181,32 @@ def main():
                 return cid
         return None
 
+    def upsert_data(model, df, index_elements):
+        if df.empty: return
+        
+        # Converte DF para dicts
+        records = df.to_dict(orient="records")
+        
+        # Filtra colunas que existem no modelo
+        from sqlalchemy import inspect
+        model_cols = [c.key for c in inspect(model).mapper.column_attrs]
+        valid_records = []
+        for r in records:
+            valid_records.append({k: v for k, v in r.items() if k in model_cols})
+
+        stmt = insert(model).values(valid_records)
+        
+        # Colunas para atualizar em caso de conflito (todas exceto as do índice)
+        update_cols = {c: stmt.excluded[c] for c in model_cols if c not in index_elements and c != 'data_modificacao'}
+        
+        upsert_stmt = stmt.on_conflict_do_update(
+            index_elements=index_elements,
+            set_=update_cols
+        )
+        
+        with engine.begin() as conn:
+            conn.execute(upsert_stmt)
+
     # Fatos: Registros SNPC (MAPA)
     if not df_cult.empty:
         df_cult_f = df_cult.copy()
@@ -188,8 +218,8 @@ def main():
         df_cult_f = df_cult_f[[c for c in cols_cult if c in df_cult_f.columns]]
         df_cult_f = df_cult_f.drop_duplicates(subset=["nr_registro"]).dropna(subset=["cultivar"])
         
-        df_cult_f.to_sql("fato_registro_cultivares", engine, if_exists="append", index=False)
-        log.info(f"Fato Cultivares: inseridos {len(df_cult_f)} registros.")
+        upsert_data(FatoCultivar, df_cult_f, index_elements=['nr_registro'])
+        log.info(f"Fato Cultivares: Upsert concluído para {len(df_cult_f)} registros.")
 
     # Fatos: Produção Municipal (PAM/IBGE)
     if not df_pam.empty:
@@ -204,8 +234,8 @@ def main():
             if c not in df_pam_f.columns: df_pam_f[c] = None
         df_pam_f = df_pam_f[cols_pam].dropna(subset=["id_cultura", "id_municipio"])
         
-        df_pam_f.to_sql("fato_producao_pam", engine, if_exists="append", index=False)
-        log.info(f"Fato Producao PAM: inseridos {len(df_pam_f)} registros.")
+        upsert_data(FatoProducaoPAM, df_pam_f, index_elements=['id_cultura', 'id_municipio', 'ano'])
+        log.info(f"Fato Producao PAM: Upsert concluído para {len(df_pam_f)} registros.")
 
     # Fatos: Zoneamento de Risco (ZARC/MAPA)
     if not df_zarc.empty:
@@ -227,22 +257,59 @@ def main():
             if c not in df_zarc_f.columns: df_zarc_f[c] = None
         df_zarc_f = df_zarc_f[cols_zarc].dropna(subset=["id_cultura", "id_municipio"])
         
-        df_zarc_f.to_sql("fato_risco_zarc", engine, if_exists="append", index=False)
-        log.info(f"Fato Risco ZARC: inseridos {len(df_zarc_f)} registros.")
+        upsert_data(FatoRiscoZARC, df_zarc_f, index_elements=['id_cultura', 'id_municipio', 'tipo_solo', 'periodo_plantio'])
+        log.info(f"Fato Risco ZARC: Upsert concluído para {len(df_zarc_f)} registros.")
 
-    # Fatos: Produção UF (CONAB)
-    if not df_conab.empty:
+    # Fatos: CONAB (Produção e Preços)
+    if isinstance(df_conab, dict):
+        for key, df in df_conab.items():
+            if df.empty: continue
+            
+            df_f = df.copy()
+            df_f["id_cultura"] = df_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
+            df_f = df_f.dropna(subset=["id_cultura"])
+            
+            if "cod_municipio_ibge" in df_f.columns:
+                df_f["id_municipio"] = df_f["cod_municipio_ibge"].astype(str).str[:7].map(map_mun)
+            else:
+                df_f["id_municipio"] = None
+
+            if key in ["producao_historica", "producao_estimativa"]:
+                cols_conab = ["id_cultura", "uf", "ano_agricola", "safra", "area_plantada_mil_ha", "producao_mil_t", "produtividade_t_ha"]
+                df_upsert = df_f[cols_conab]
+                upsert_data(FatoProducaoConab, df_upsert, index_elements=['id_cultura', 'uf', 'ano_agricola', 'safra'])
+                log.info(f"Produção CONAB ({key}): Upsert concluído.")
+                
+            elif key in ["precos_uf_mensal", "precos_mun_mensal"]:
+                cols_p = ["id_cultura", "id_municipio", "uf", "ano", "mes", "valor_kg", "nivel_comercializacao"]
+                for c in cols_p:
+                    if c not in df_f.columns: df_f[c] = None
+                
+                upsert_data(FatoPrecoConabMensal, df_f[cols_p], index_elements=['id_cultura', 'id_municipio', 'uf', 'ano', 'mes', 'nivel_comercializacao'])
+                log.info(f"Preços Mensais CONAB ({key}): Upsert concluído.")
+
+            elif key in ["precos_uf_semanal", "precos_mun_semanal"]:
+                # Política Semanal: Resetar a cada 4 semanas
+                result = engine.connect().execute(text("SELECT COUNT(DISTINCT semana) FROM fato_precos_conab_semanal"))
+                count_semanas = result.scalar() or 0
+                if count_semanas >= 4:
+                    log.info("Resetando série semanal (política 4 semanas)")
+                    engine.connect().execute(text("TRUNCATE TABLE fato_precos_conab_semanal"))
+                
+                cols_s = ["id_cultura", "id_municipio", "uf", "ano", "mes", "semana", "data_referencia", "valor_kg", "nivel_comercializacao"]
+                for c in cols_s:
+                    if c not in df_f.columns: df_f[c] = None
+                
+                upsert_data(FatoPrecoConabSemanal, df_f[cols_s], index_elements=['id_cultura', 'id_municipio', 'uf', 'ano', 'mes', 'semana', 'nivel_comercializacao'])
+                log.info(f"Preços Semanais CONAB ({key}): Upsert concluído.")
+    elif not df_conab.empty:
+        # Fallback para o comportamento antigo caso algo falhe
         df_conab_f = df_conab.copy()
         df_conab_f["id_cultura"] = df_conab_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
-        
-        # Filtramos para as culturas que temos na dimensão (as alvo)
         df_conab_f = df_conab_f.dropna(subset=["id_cultura"])
-        
         cols_conab = ["id_cultura", "uf", "ano_agricola", "safra", "area_plantada_mil_ha", "producao_mil_t", "produtividade_t_ha"]
-        df_conab_f = df_conab_f[cols_conab]
-        
-        df_conab_f.to_sql("fato_producao_conab", engine, if_exists="append", index=False)
-        log.info(f"Fato Produção CONAB: inseridos {len(df_conab_f)} registros.")
+        df_conab_f[cols_conab].to_sql("fato_producao_conab", engine, if_exists="append", index=False)
+        log.info(f"Fato Produção CONAB (Legacy): inseridos {len(df_conab_f)} registros.")
 
     # Fatos: Agrotóxicos (Agrofit/MAPA)
     if not df_agrofit.empty:
@@ -256,9 +323,8 @@ def main():
                      "titular_registro", "classe", "situacao", "praga_comum"]
         df_agrofit_f = df_agrofit_f[cols_agro]
         
-        # Grão: Relação Cultura x Praga
-        df_agrofit_f.to_sql("fato_agrofit", engine, if_exists="append", index=False)
-        log.info(f"Fato Agrofit: inseridos {len(df_agrofit_f)} registros.")
+        upsert_data(FatoAgrofit, df_agrofit_f, index_elements=['id_cultura', 'nr_registro', 'marca_comercial', 'praga_comum'])
+        log.info(f"Fato Agrofit: Upsert concluído para {len(df_agrofit_f)} registros.")
 
     log.info("--- Pipeline Concluído ---")
 

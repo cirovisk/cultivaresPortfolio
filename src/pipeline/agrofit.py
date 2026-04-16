@@ -1,7 +1,9 @@
 import pandas as pd
 import requests
+import os
 from .base_extractor import BaseExtractor
 from io import BytesIO
+from pathlib import Path
 
 class AgrofitExtractor(BaseExtractor):
     """
@@ -13,27 +15,44 @@ class AgrofitExtractor(BaseExtractor):
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
 
+    def __init__(self, use_cache: bool = True, cache_path: str = "data/agrofit_produtos.csv"):
+        super().__init__()
+        self.use_cache = use_cache
+        self.cache_path = Path(cache_path).resolve()
+
     def extract(self) -> pd.DataFrame:
-        self.log.info(f"Baixando dados do Agrofit (pode demorar devido ao tamanho): {self.DATA_URL}")
+        if self.use_cache and self.cache_path.exists():
+            if not self.is_file_stale(str(self.cache_path), threshold_days=30):
+                self.log.info(f"Usando cache local Agrofit (atualizado): {self.cache_path}")
+                return self._read_csv()
+            self.log.info(f"Cache Agrofit expirado. Atualizando...")
+
+        self.log.info(f"Baixando dados do Agrofit (volumetria alta): {self.DATA_URL}")
         try:
-            # Desempenho: Alta volumetria (~400MB)
-            
             resp = requests.get(self.DATA_URL, headers=self.HEADERS, timeout=300)
             resp.raise_for_status()
             
-            # I/O: Parsing de CSV (delimiter=";")
-            df = pd.read_csv(
-                BytesIO(resp.content), 
-                sep=";", 
-                encoding="utf-8", 
-                dtype=str, 
-                on_bad_lines='skip',
-                low_memory=False
-            )
-            return df
+            # Salva no cache
+            self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+            self.cache_path.write_bytes(resp.content)
+            self.log.info(f"Download concluído e salvo em: {self.cache_path}")
+            
+            return self._read_csv()
         except Exception as e:
             self.log.error(f"Falha ao extrair dados do Agrofit: {e}")
+            if self.cache_path.exists():
+                return self._read_csv()
             return pd.DataFrame()
+
+    def _read_csv(self) -> pd.DataFrame:
+        return pd.read_csv(
+            self.cache_path,
+            sep=";", 
+            encoding="utf-8", 
+            dtype=str, 
+            on_bad_lines='skip',
+            low_memory=False
+        )
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:

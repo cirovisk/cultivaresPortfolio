@@ -27,8 +27,10 @@ class CultivaresExtractor(BaseExtractor):
 
     def extract(self) -> pd.DataFrame:
         if self.use_cache and self.cache_path.exists():
-            self.log.info(f"Usando cache local: {self.cache_path}")
-            return self._read_csv()
+            if not self.is_file_stale(str(self.cache_path), threshold_days=30):
+                self.log.info(f"Usando cache local (atualizado): {self.cache_path}")
+                return self._read_csv()
+            self.log.info(f"Cache local expirado ({self.cache_path}). Atualizando...")
 
         self.log.info("Baixando CSV do SNPC/MAPA...")
         try:

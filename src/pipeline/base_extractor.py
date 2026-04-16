@@ -45,3 +45,15 @@ class BaseExtractor(ABC):
             return u"".join([c for c in nfkd_form if not unicodedata.combining(c)]).lower()
 
         return series.apply(remove_accents).str.strip()
+
+    def is_file_stale(self, path: str, threshold_days: int = 30) -> bool:
+        """
+        Verifica se um arquivo local está desatualizado baseado na sua idade.
+        """
+        import os
+        import time
+        if not os.path.exists(path):
+            return False
+            
+        file_age_days = (time.time() - os.path.getmtime(path)) / (24 * 3600)
+        return file_age_days > threshold_days
