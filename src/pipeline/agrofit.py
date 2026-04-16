@@ -5,7 +5,7 @@ from io import BytesIO
 
 class AgrofitExtractor(BaseExtractor):
     """
-    Extrator de Produtos Formulados (Agrotóxicos) do AGROFIT/MAPA.
+    Extrator Agrofit: Produtos Formulados / Agrotóxicos (MAPA).
     """
     
     DATA_URL = "https://dados.agricultura.gov.br/dataset/6c913699-e82e-4da3-a0a1-fb6c431e367f/resource/d30b30d7-e256-484e-9ab8-cd40974e1238/download/agrofitprodutosformulados.csv"
@@ -16,15 +16,12 @@ class AgrofitExtractor(BaseExtractor):
     def extract(self) -> pd.DataFrame:
         self.log.info(f"Baixando dados do Agrofit (pode demorar devido ao tamanho): {self.DATA_URL}")
         try:
-            # Dado o tamanho (374MB+), vamos usar chunks para não estourar memória e filtrar no caminho
-            # No entanto, se o site não suportar stream bem ou cair, pode ser lento.
-            # Vamos tentar ler diretamente com pandas passando os headers via requests se necessário, 
-            # ou usar requests.get com stream.
+            # Desempenho: Alta volumetria (~400MB)
             
             resp = requests.get(self.DATA_URL, headers=self.HEADERS, timeout=300)
             resp.raise_for_status()
             
-            # Lendo com detecção automática de compressão (caso o servidor mande gzip transparente)
+            # I/O: Parsing de CSV (delimiter=";")
             df = pd.read_csv(
                 BytesIO(resp.content), 
                 sep=";", 
@@ -44,7 +41,7 @@ class AgrofitExtractor(BaseExtractor):
 
         self.log.info("Transformando dados do Agrofit...")
         
-        # Mapeamento de colunas
+        # Transformação: Mapeamento de colunas
         renames = {
             "NR_REGISTRO": "nr_registro",
             "MARCA_COMERCIAL": "marca_comercial",
@@ -58,7 +55,7 @@ class AgrofitExtractor(BaseExtractor):
         
         df = df.rename(columns=renames)
         
-        # Selecionar apenas o necessário
+        # Seleção: Filtro de colunas relevantes
         cols = list(renames.values())
         df = df[[c for c in cols if c in df.columns]]
         

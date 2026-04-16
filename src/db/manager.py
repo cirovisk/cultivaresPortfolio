@@ -7,7 +7,7 @@ from sqlalchemy.sql import func
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-# Configuração Padrão, mas pode ser sobrescrita por .env
+# Configuração: Credenciais via variáveis de ambiente
 DB_USER = os.getenv("POSTGRES_USER", "cultivares_user")
 DB_PASS = os.getenv("POSTGRES_PASSWORD", "cultivares_password")
 DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
@@ -20,9 +20,7 @@ engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# ---------------------------------------------------------------------------
-# ORM Models (Star Schema)
-# ---------------------------------------------------------------------------
+# Schema: Modelos ORM (Star Schema)
 
 class DimCultura(Base):
     __tablename__ = "dim_cultura"
@@ -102,12 +100,10 @@ class FatoAgrofit(Base):
     praga_comum = Column(String)
     atualizado_em = Column(DateTime, server_default=func.now())
 
-# ---------------------------------------------------------------------------
-# Funções de Gerenciamento
-# ---------------------------------------------------------------------------
+# Operações: Gerenciamento de Conexão
 
 def init_db():
-    """Cria as tabelas no banco de dados se não existirem."""
+    """DDL: Sincronização de tabelas com o banco."""
     log.info("Inicializando/Verificando banco de dados PostgreSQL...")
     try:
         Base.metadata.create_all(bind=engine)
@@ -117,7 +113,7 @@ def init_db():
         raise
 
 def get_db():
-    """Generator de sessão SQLAlchemy."""
+    """Session: Generator de conexão SQLAlchemy."""
     db = SessionLocal()
     try:
         yield db

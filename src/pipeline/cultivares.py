@@ -7,7 +7,7 @@ from .base_extractor import BaseExtractor
 
 class CultivaresExtractor(BaseExtractor):
     """
-    Extrator de Cultivares Registradas do SNPC (MAPA).
+    Extrator SNPC: Registro Nacional de Cultivares (MAPA).
     """
 
     SNPC_URL   = "https://sistemas.agricultura.gov.br/snpc/cultivarweb/cultivares_registradas.php"
@@ -69,11 +69,11 @@ class CultivaresExtractor(BaseExtractor):
         self.log.info("Iniciando limpeza do dataset de Cultivares...")
         s = df.copy()
 
-        # Limpeza de texto padrão
+        # Transformação: Limpeza de strings e sanitização
         def _limpar_texto(serie: pd.Series) -> pd.Series:
             _RE_HTML_TAGS = re.compile(r"<[^>]{0,30}>|</\\+>", re.IGNORECASE)
             tmp = serie.copy().str.strip()
-            # Remove todas as aspas simples e duplas que costumam vir do CSV do SNPC
+            # Normalização: Remoção de aspas e lixo CSV
             tmp = tmp.str.replace(r"['\"]", "", regex=True)
             tmp = tmp.str.replace(_RE_HTML_TAGS, "", regex=True).str.strip()
             return tmp.replace("", np.nan)
@@ -83,7 +83,7 @@ class CultivaresExtractor(BaseExtractor):
             if col in s.columns:
                 s[col] = _limpar_texto(s[col])
 
-        # Extrair nome secundário
+        # Parsing: Extração de nome secundário (split '/')
         if "CULTIVAR" in s.columns:
             split_c = s["CULTIVAR"].str.split("/", n=1, expand=True)
             s["CULTIVAR"] = split_c[0].str.strip()
@@ -93,14 +93,13 @@ class CultivaresExtractor(BaseExtractor):
             else:
                 s["NOME SECUNDÁRIO"] = pd.NA
 
-        # Normalizar Cultura (NOME COMUM e GRUPO DA ESPÉCIE) para bater com SIDRA/ZARC
-        # O modelo SIDRA foca no nome comum padronizado. 
+        # Normalização: Alinhamento de nomes para cruzamento
         if "NOME COMUM" in s.columns:
             s["CULTURA_NORMALIZADA"] = self.normalize_culture_name(s["NOME COMUM"])
         elif "GRUPO DA ESPÉCIE" in s.columns:
             s["CULTURA_NORMALIZADA"] = self.normalize_culture_name(s["GRUPO DA ESPÉCIE"])
 
-        # Datas
+        # Transformação: Tipagem de data (ISO 8601)
         for c in ["DATA DO REGISTRO", "DATA DE VALIDADE DO REGISTRO"]:
             if c in s.columns:
                 s[c] = pd.to_datetime(s[c], dayfirst=True, errors="coerce")
@@ -108,7 +107,7 @@ class CultivaresExtractor(BaseExtractor):
         if "DATA DO REGISTRO" in s.columns:
             s["ANO"] = s["DATA DO REGISTRO"].dt.year.astype("Int64")
 
-        # Classificação de Setor simplificada
+        # Enriquecimento: Classificação de mantenedor (Público/Privado)
         if "MANTENEDOR (REQUERENTE) (NOME)" in s.columns:
             _PUBL = ["EMBRAPA", "UNIVERSIDADE", "INSTITUTO", "EPAGRI", "PESAGRO", "IAPAR", "SECRETARIA"]
             def cat_setor(x):
@@ -118,7 +117,7 @@ class CultivaresExtractor(BaseExtractor):
                 return "Privado"
             s["SETOR"] = s["MANTENEDOR (REQUERENTE) (NOME)"].apply(cat_setor)
 
-        # Padronizar nomes das colunas para db
+        # Transformação: Mapeamento de colunas para banco
         renames = {
             "CULTIVAR": "cultivar",
             "NOME SECUNDÁRIO": "nome_secundario",

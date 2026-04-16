@@ -54,12 +54,11 @@ def preencher_dimensao_mantenedor(db, df_cult):
 def preencher_dimensao_municipio(db, df_pam, df_zarc):
     mun_map = {}
     
-    # Extrair do PAM
+    # Dimensões: Municípios (PAM/IBGE)
     pam_muns = df_pam[["cod_municipio_ibge", "municipio_nome"]].drop_duplicates().dropna(subset=["cod_municipio_ibge"]) if not df_pam.empty else []
     
-    # Insere do PAM
     for _, row in pam_muns.iterrows() if not df_pam.empty else []:
-        cod = str(row["cod_municipio_ibge"])[:7] # Garantir 7 digitos
+        cod = str(row["cod_municipio_ibge"])[:7] # Normalização: ID IBGE (7 dígitos)
         if not cod: continue
         db_mun = db.query(DimMunicipio).filter(DimMunicipio.codigo_ibge == cod).first()
         if not db_mun:
@@ -70,7 +69,7 @@ def preencher_dimensao_municipio(db, df_pam, df_zarc):
             db.refresh(db_mun)
         mun_map[cod] = db_mun.id_municipio
         
-    # Validar do ZARC (as vezes tem municípios que não estão no PAM)
+    # Dimensões: Municípios (ZARC/MAPA)
     if not df_zarc.empty and "cod_municipio_ibge" in df_zarc.columns:
         zarc_muns = df_zarc[["cod_municipio_ibge", "municipio"]].drop_duplicates().dropna(subset=["cod_municipio_ibge"])
         for _, row in zarc_muns.iterrows():
@@ -89,7 +88,7 @@ def preencher_dimensao_municipio(db, df_pam, df_zarc):
     return mun_map
 
 def clear_facts():
-    # Truncate tables to allow safe re-run
+    # DDL: Limpeza de tabelas fato (Safe re-run)
     with engine.begin() as conn:
         conn.execute(text("TRUNCATE TABLE fato_registro_cultivares, fato_producao_pam, fato_risco_zarc, fato_producao_conab, fato_agrofit RESTART IDENTITY CASCADE;"))
         log.info("Tabelas Fato truncadas para recarga segura.")
@@ -107,7 +106,7 @@ def main():
     
     culturas_alvo = ["soja", "milho", "trigo", "algodão", "cana-de-açúcar"]
     
-    # Instanciar os extratores selecionados
+    # ETL: Instanciação de extratores
     instances = {}
     for source in args.sources:
         if source == "cultivares":
@@ -127,7 +126,7 @@ def main():
 
 
 
-    # Executar extrações em paralelo
+    # Extração: Processamento paralelo (Threads)
     log.info("Executando extrações em paralelo...")
     dfs = {}
     if instances:
@@ -150,16 +149,16 @@ def main():
 
 
     
-    # 1. Carregar Dimensões e buscar Mapas de IDs
+    # DML: Carga de tabelas dimensão
     log.info("Carregando Dimensões (Cultura, Mantenedor, Município)...")
     map_cult = preencher_dimensao_cultura(db, culturas_alvo)
     map_mant = preencher_dimensao_mantenedor(db, df_cult)
     map_mun = preencher_dimensao_municipio(db, df_pam, df_zarc)
     
-    # 2. Transformar Fatos substituindo chaves naturais por chaves estrangeiras
+    # DML: Carga de tabelas fato (FK Lookup)
     log.info("Mapeando Chaves Estrangeiras nas Tabelas Fato...")
     
-    # Helper para mapeamento flexível de cultura
+    # Lookup: Resolução de ID por cultura (Flex Search)
     def get_cultura_id(nome_cultura, mapping):
         if not nome_cultura: return None
         
@@ -178,7 +177,7 @@ def main():
                 return cid
         return None
 
-    # -- Cultivares --
+    # Fatos: Registros SNPC (MAPA)
     if not df_cult.empty:
         df_cult_f = df_cult.copy()
         df_cult_f["id_cultura"] = df_cult_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
@@ -192,11 +191,11 @@ def main():
         df_cult_f.to_sql("fato_registro_cultivares", engine, if_exists="append", index=False)
         log.info(f"Fato Cultivares: inseridos {len(df_cult_f)} registros.")
 
-    # -- PAM --
+    # Fatos: Produção Municipal (PAM/IBGE)
     if not df_pam.empty:
         df_pam_f = df_pam.copy()
         df_pam_f["id_cultura"] = df_pam_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
-        # PAM IBGE -> codigo ibge = string, cut to 7 if necessary
+        # Normalização: Código Municipal
         df_pam_f["cod_municipio_ibge"] = df_pam_f["cod_municipio_ibge"].astype(str).str[:7]
         df_pam_f["id_municipio"] = df_pam_f["cod_municipio_ibge"].map(map_mun)
         
@@ -208,15 +207,14 @@ def main():
         df_pam_f.to_sql("fato_producao_pam", engine, if_exists="append", index=False)
         log.info(f"Fato Producao PAM: inseridos {len(df_pam_f)} registros.")
 
-    # -- ZARC --
+    # Fatos: Zoneamento de Risco (ZARC/MAPA)
     if not df_zarc.empty:
         df_zarc_f = df_zarc.copy()
         df_zarc_f["id_cultura"] = df_zarc_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
         df_zarc_f["cod_municipio_ibge"] = df_zarc_f["cod_municipio_ibge"].astype(str).str[:7]
         df_zarc_f["id_municipio"] = df_zarc_f["cod_municipio_ibge"].map(map_mun)
         
-        # Mapeando colunas do CSV dinâmico do MAPA
-        # 'solo', 'decendio', 'risco'
+        # Transform: Mapeamento de colunas dinâmicas
         renames_zarc = {}
         for c in df_zarc_f.columns:
             if "solo" in c: renames_zarc[c] = "tipo_solo"
@@ -232,7 +230,7 @@ def main():
         df_zarc_f.to_sql("fato_risco_zarc", engine, if_exists="append", index=False)
         log.info(f"Fato Risco ZARC: inseridos {len(df_zarc_f)} registros.")
 
-    # -- CONAB --
+    # Fatos: Produção UF (CONAB)
     if not df_conab.empty:
         df_conab_f = df_conab.copy()
         df_conab_f["id_cultura"] = df_conab_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
@@ -246,7 +244,7 @@ def main():
         df_conab_f.to_sql("fato_producao_conab", engine, if_exists="append", index=False)
         log.info(f"Fato Produção CONAB: inseridos {len(df_conab_f)} registros.")
 
-    # -- Agrofit --
+    # Fatos: Agrotóxicos (Agrofit/MAPA)
     if not df_agrofit.empty:
         df_agrofit_f = df_agrofit.copy()
         df_agrofit_f["id_cultura"] = df_agrofit_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
@@ -258,7 +256,7 @@ def main():
                      "titular_registro", "classe", "situacao", "praga_comum"]
         df_agrofit_f = df_agrofit_f[cols_agro]
         
-        # O Agrofit pode ter duplicatas devido ao cruzamento Cultura x Praga, vamos manter assim por enquanto
+        # Grão: Relação Cultura x Praga
         df_agrofit_f.to_sql("fato_agrofit", engine, if_exists="append", index=False)
         log.info(f"Fato Agrofit: inseridos {len(df_agrofit_f)} registros.")
 

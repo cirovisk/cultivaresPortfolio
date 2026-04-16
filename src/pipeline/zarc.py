@@ -5,8 +5,8 @@ import io
 
 class ZarcExtractor(BaseExtractor):
     """
-    Extrator de Tabelas de Zoneamento Agrícola de Risco Climático (ZARC) via MAPA CKAN API.
-    A Tábua de Risco traz Risco Climático (20%, 30%, 40%) por período e tipo de solo.
+    Extrator ZARC: Zoneamento Agrícola de Risco Climático (MAPA).
+    Tabelas de risco por solo e decêndio.
     """
 
     TARGET_CROPS = ["soja", "milho", "trigo", "algodao", "cana-de-acucar"]
@@ -20,7 +20,7 @@ class ZarcExtractor(BaseExtractor):
         for crop in self.TARGET_CROPS:
             self.log.info(f"Buscando recurso ZARC no CKAN (dados.agricultura.gov.br) para: {crop}")
             
-            # API do CKAN do MAPA.
+            # CKAN API: Busca de pacotes no Portal de Dados Abertos
             # É comum usar termos mais amplos, como zarc e o nome da cultura
             query = f'title:zarc AND ({crop} OR {crop.capitalize()})'
             ckan_url = f"https://dados.agricultura.gov.br/api/3/action/package_search?q={query}&rows=1"
@@ -34,7 +34,7 @@ class ZarcExtractor(BaseExtractor):
                     results = data.get("result", {}).get("results", [])
                     if results:
                         package = results[0]
-                        # Buscar resource CSV
+                        # Metadata Parsing: Busca de recurso CSV
                         csv_url = None
                         for resource in package.get("resources", []):
                             if resource.get("format", "").upper() in ["CSV", "CSV.GZ", "GZ"]:
@@ -47,7 +47,7 @@ class ZarcExtractor(BaseExtractor):
                             resp_csv = requests.get(csv_url, headers=headers, timeout=60)
                             resp_csv.raise_for_status()
                             
-                            # Tentar ler com detecção automática de compressão
+                            # I/O: Leitura com inferência de compressão (zip/gzip)
                             try:
                                 df_crop = pd.read_csv(
                                     io.BytesIO(resp_csv.content), 
@@ -57,7 +57,7 @@ class ZarcExtractor(BaseExtractor):
                                     compression='infer'
                                 )
                             except Exception:
-                                # Fallback para gzip explícito caso o infer falhe mas os bytes indiquem gzip
+                                # Fallback: Descompressão explícita (gzip)
                                 df_crop = pd.read_csv(
                                     io.BytesIO(resp_csv.content), 
                                     sep=';', 
@@ -78,7 +78,7 @@ class ZarcExtractor(BaseExtractor):
         if not all_dfs:
             return pd.DataFrame()
             
-        # O MAPA nem sempre mantém colunas unificadas, então concatenamos tudo
+        # Transformação: Consolidação de múltiplos recursos
         df_concat = pd.concat(all_dfs, ignore_index=True)
         return df_concat
 
@@ -88,9 +88,7 @@ class ZarcExtractor(BaseExtractor):
             
         df_clean = df.copy()
         
-        # Mapeamento genérico do ZARC
-        # Geralmente contém Municipios (Cód IBGE), Cultivar, Solo, Risco
-        # Vamos padronizar colunas para lower case e snake_case
+        # Normalização: Sanitização de cabeçalhos (Snake Case / ASCII)
         df_clean.columns = (
             df_clean.columns.str.lower()
             .str.replace(" ", "_")
@@ -100,7 +98,7 @@ class ZarcExtractor(BaseExtractor):
             .str.decode('utf-8')
         )
         
-        # O MAPA costuma usar "cd_mun", "codigo_municipio" ou "ibge"
+        # Mapeamento: Identificação de coluna de código IBGE
         col_ibge = [c for c in df_clean.columns if "ibge" in c or "cd_mun" in c or "codigo_mun" in c]
         if col_ibge:
             df_clean = df_clean.rename(columns={col_ibge[0]: "cod_municipio_ibge"})

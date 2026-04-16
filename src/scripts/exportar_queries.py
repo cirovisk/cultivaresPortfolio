@@ -3,7 +3,7 @@ from sqlalchemy import text
 from db.manager import engine
 from pathlib import Path
 
-# Garantir que a pasta data exista
+# I/O: Garantia de diretório de destino
 Path("../data").mkdir(exist_ok=True)
 
 query = """

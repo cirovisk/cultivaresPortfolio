@@ -5,7 +5,7 @@ from .base_extractor import BaseExtractor
 
 class ConabExtractor(BaseExtractor):
     """
-    Extrator de Série Histórica de Grãos da CONAB.
+    Extrator CONAB: Série Histórica de Produção de Grãos.
     """
     
     DATA_URL = "https://portaldeinformacoes.conab.gov.br/downloads/arquivos/SerieHistoricaGraos.txt"
@@ -16,8 +16,7 @@ class ConabExtractor(BaseExtractor):
             resp = requests.get(self.DATA_URL, timeout=60)
             resp.raise_for_status()
             
-            # O arquivo é separado por ponto e vírgula
-            # Usando StringIO para ler o conteúdo textual
+            # I/O: Parsing de CSV delimitado por ";"
             df = pd.read_csv(
                 StringIO(resp.text),
                 sep=";",
@@ -36,10 +35,10 @@ class ConabExtractor(BaseExtractor):
 
         self.log.info("Limpando e transformando dados da CONAB...")
         
-        # Strip em todas as colunas
+        # Sanitização: Remoção de whitespaces
         df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
 
-        # Mapeamento de colunas
+        # Transformação: Mapeamento de colunas
         renames = {
             "ano_agricola": "ano_agricola",
             "dsc_safra_previsao": "safra",
@@ -52,8 +51,7 @@ class ConabExtractor(BaseExtractor):
         
         df = df.rename(columns=renames)
         
-        # Converter colunas numéricas (usam ponto como separador decimal no TXT, pelo que vi no sample)
-        # Se usar vírgula, precisaremos ajustar. No sample vimos: 99.3;20;0.2
+        # Transformação: Casting de tipos numéricos
         cols_num = ["area_plantada_mil_ha", "producao_mil_t", "produtividade_t_ha"]
         for col in cols_num:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
@@ -62,7 +60,7 @@ class ConabExtractor(BaseExtractor):
         df["cultura"] = self.normalize_culture_name(df["produto_raw"])
         
         # Filtro básico (opcional: podemos filtrar no main ou aqui)
-        # Vamos manter apenas as colunas necessárias
+        # Seleção: Filtro de colunas relevantes
         cols_final = ["ano_agricola", "safra", "uf", "cultura", "area_plantada_mil_ha", "producao_mil_t", "produtividade_t_ha"]
         df = df[cols_final]
 

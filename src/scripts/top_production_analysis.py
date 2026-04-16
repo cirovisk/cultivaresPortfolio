@@ -3,17 +3,16 @@ import os
 from sqlalchemy import text
 from tabulate import tabulate
 
-# Adicionar o diretório src ao path para importar o db manager
+# Config: Adição de 'src' ao sys.path para importações locais
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from db.manager import engine
 
 def fetch_analysis_data(cultures=["soja", "milho"]):
     """
-    Tenta buscar dados do PAM (Municipal) ou CONAB (Estadual) para 
-    cruzar com a disponibilidade de cultivares.
+    Data Analysis: Cruzamento de volume de produção vs abundância de cultivares.
     """
     
-    # 1. Tentar PAM primeiro
+    # Granularidade: Municipal (PAM/IBGE)
     pam_query = text("""
         WITH TopMunicipios AS (
             SELECT 
@@ -40,8 +39,7 @@ def fetch_analysis_data(cultures=["soja", "milho"]):
         if res:
             return res, "MUNICÍPIOS (IBGE/PAM)"
         
-        # 2. Fallback para CONAB (UF)
-        # Usando = ANY(:cultures) que é mais robusto para listas em Postgres + SQLAlchemy text
+        # Granularidade: Estadual (CONAB) - Fallback
         conab_query = text("""
             WITH TopUFs AS (
                 SELECT 
