@@ -1,0 +1,88 @@
+# Cultivares - Pipeline de Dados Agrícolas
+
+Este projeto é uma solução de **Engenharia de Dados** focada na integração de múltiplos datasets do setor agrícola brasileiro. Ele consolida informações de registros de cultivares, produção agrícola municipal e zoneamento de risco climático em um data warehouse estruturado.
+
+## 🚀 Objetivo
+
+O objetivo principal é criar um ambiente unificado para análise de dados agro, permitindo correlacionar a oferta de tecnologias (cultivares registradas) com o desempenho produtivo (IBGE/SIDRA) e a viabilidade climática (MAPA/ZARC). O projeto foi concebido para ser escalável, com a visão de integrar diversas outras fontes de dados governamentais e privadas no futuro.
+
+## 📊 Fontes de Dados
+
+O pipeline extrai e processa dados das seguintes fontes:
+
+1.  **MAPA/SNPC (CultivarWeb):** Dados sobre cultivares registradas e protegidas no Brasil.
+2.  **IBGE/SIDRA (PAM):** Produção Agrícola Municipal, contemplando área plantada, colhida, quantidade produzida e valor da produção.
+3.  **MAPA/ZARC:** Zoneamento de Agrícola de Risco Climático, indicando períodos de plantio com menores riscos por município e cultura.
+
+## 🛠️ Tecnologias Utilizadas
+
+-   **Linguagem:** Python 3.10+
+-   **Processamento de Dados:** Pandas, NumPy
+-   **Banco de Dados:** PostgreSQL (armazenamento final) via SQLAlchemy
+-   **Testes Automáticos:** Pytest
+-   **Infraestrutura:** Docker & Docker Compose
+-   **CI/CD:** GitHub Actions
+
+## 🏗️ Arquitetura do Projeto
+
+O projeto segue uma arquitetura modular baseada em um modelo Estrela (Star Schema):
+
+-   **Dimensões:** Cultura, Município, Mantenedor.
+-   **Fatos:** Cadastro de Cultivares, Produção PAM, Risco ZARC.
+
+### Estrutura de Diretórios
+
+```text
+.
+├── data/               # Dados brutos e persistência local (cache)
+├── notebooks/          # Análises exploratórias e prototipagem
+├── src/
+│   ├── db/            # Definição do esquema e manager do banco
+│   ├── pipeline/      # Classes Extratoras (ETL)
+│   └── main.py        # Orquestrador principal do pipeline
+├── tests/              # Suite de testes unitários e de integração
+├── Dockerfile          # Definição do container da aplicação
+└── docker-compose.yml  # Orquestração do banco e serviços
+```
+
+## ⚙️ Como Executar
+
+### Pré-requisitos
+-   Docker e Docker Compose instalados.
+
+### Passo a Passo
+
+1.  **Subir o ambiente (Banco de Dados):**
+    ```bash
+    docker-compose up -d
+    ```
+
+2.  **Configurar o ambiente virtual (opcional/local):**
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    ```
+
+3.  **Executar o pipeline:**
+    ```bash
+    python src/main.py
+    ```
+
+## 🧪 Testes
+
+Para garantir a qualidade dos dados e a integridade do código, execute:
+
+```bash
+pytest tests/
+```
+
+## 🛤️ Roadmap / Futuras Integrações
+
+O projeto foi estruturado para facilitar a adição de novas fontes de dados. Algumas integrações planejadas incluem:
+- **Preços de Commodities:** Integração com APIs de cotações (CEPEA/B3).
+- **Dados Meteorológicos:** Histórico de clima em tempo real via OpenWeather ou INMET.
+- **Imagens de Satélite:** Processamento de índices de vegetação (NDVI) via Sentinel/Google Earth Engine.
+
+---
+*Este projeto faz parte de um portfólio de engenharia de dados focado em agronegócio.*

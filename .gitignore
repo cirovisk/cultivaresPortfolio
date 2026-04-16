@@ -8,3 +8,17 @@ __pycache__/
 
 # Dados brutos (baixados automaticamente pelo pipeline)
 relatorio_cultivares.csv
+data/*.csv
+data/*.ddb
+
+# Scripts temporários e logs
+scratch*.py
+out.log
+*.log
+
+# Pastas de Notebooks e Ferramentas
+notebooks/
+.ipynb_checkpoints/
+
+# SO
+.DS_Store

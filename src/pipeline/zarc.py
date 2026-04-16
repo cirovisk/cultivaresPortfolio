@@ -25,8 +25,10 @@ class ZarcExtractor(BaseExtractor):
             query = f'title:zarc AND ({crop} OR {crop.capitalize()})'
             ckan_url = f"https://dados.agricultura.gov.br/api/3/action/package_search?q={query}&rows=1"
             
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            
             try:
-                resp = requests.get(ckan_url, timeout=20)
+                resp = requests.get(ckan_url, headers=headers, timeout=20)
                 if resp.status_code == 200:
                     data = resp.json()
                     results = data.get("result", {}).get("results", [])
@@ -35,14 +37,16 @@ class ZarcExtractor(BaseExtractor):
                         # Buscar resource CSV
                         csv_url = None
                         for resource in package.get("resources", []):
-                            if resource.get("format", "").upper() == "CSV":
+                            if resource.get("format", "").upper() in ["CSV", "CSV.GZ", "GZ"]:
                                 csv_url = resource.get("url")
                                 break
                                 
                         if csv_url:
                             self.log.info(f"Fazendo download de: {csv_url}")
-                            # Ler direto usando Pandas. Geralmente separador é ';' no BR
-                            df_crop = pd.read_csv(csv_url, sep=';', encoding='utf-8', on_bad_lines='skip')
+                            # Algumas URLs exigem GET com User Agent para contornar firewall corporativo
+                            resp_csv = requests.get(csv_url, headers=headers, stream=True)
+                            resp_csv.raise_for_status()
+                            df_crop = pd.read_csv(io.BytesIO(resp_csv.content), sep=';', encoding='utf-8', on_bad_lines='skip', compression='infer')
                             df_crop["cultura_raw"] = crop
                             all_dfs.append(df_crop)
                         else:

@@ -71,12 +71,10 @@ class CultivaresExtractor(BaseExtractor):
 
         # Limpeza de texto padrão
         def _limpar_texto(serie: pd.Series) -> pd.Series:
-            _RE_ASPAS_SIMPLES = re.compile(r"^'(.*)'$")
-            _RE_ASPAS_DUPLAS  = re.compile(r'^"(.*)"$')
-            _RE_HTML_TAGS     = re.compile(r"<[^>]{0,30}>|</\\+>", re.IGNORECASE)
+            _RE_HTML_TAGS = re.compile(r"<[^>]{0,30}>|</\\+>", re.IGNORECASE)
             tmp = serie.copy().str.strip()
-            tmp = tmp.str.replace(_RE_ASPAS_SIMPLES, r"\1", regex=True)
-            tmp = tmp.str.replace(_RE_ASPAS_DUPLAS,  r"\1", regex=True)
+            # Remove todas as aspas simples e duplas que costumam vir do CSV do SNPC
+            tmp = tmp.str.replace(r"['\"]", "", regex=True)
             tmp = tmp.str.replace(_RE_HTML_TAGS, "", regex=True).str.strip()
             return tmp.replace("", np.nan)
 

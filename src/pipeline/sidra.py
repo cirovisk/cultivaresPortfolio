@@ -112,7 +112,8 @@ class SidraExtractor(BaseExtractor):
         import numpy as np
         df_clean["valor"] = pd.to_numeric(df_clean["valor"].replace(['...', '-'], np.nan), errors='coerce')
         
-        # O SIDRA retorna linhas para cada variável. Vamos pivotar para ter colunas por variável
+        # O SIDRA retorna linhas para cada variável. Vamos pivotar para ter colunas por variável.
+        # Não usamos dropna=False aqui pois isso pode gerar um produto cartesiano de todos os mun/ano/cultura.
         df_pivot = df_clean.pivot_table(
             index=["cod_municipio_ibge", "municipio_nome", "ano", "cultura"],
             columns="variavel",
@@ -122,14 +123,27 @@ class SidraExtractor(BaseExtractor):
         # Limpar o nome das variáveis para os nomes de colunas usando snake_case
         df_pivot.columns.name = None
         
-        var_renames = {}
-        for c in df_pivot.columns:
-            if "Área plantada" in c: var_renames[c] = "area_plantada_ha"
-            elif "Área colhida" in c: var_renames[c] = "area_colhida_ha"
-            elif "Quantidade" in c: var_renames[c] = "qtde_produzida_ton"
-            elif "Valor da produ" in c: var_renames[c] = "valor_producao_mil_reais"
-            
-        df_pivot = df_pivot.rename(columns=var_renames)
+        # Mapeamento para garantir que as colunas existam mesmo se o IBGE não retornar dados (ex: área colhida nula)
+        var_renames = {
+            "Área plantada": "area_plantada_ha",
+            "Área colhida": "area_colhida_ha",
+            "Quantidade produzida": "qtde_produzida_ton",
+            "Valor da produção": "valor_producao_mil_reais"
+        }
+        
+        # Encontra colunas que realmente existem e contêm os termos chave
+        actual_renames = {}
+        for col in df_pivot.columns:
+            for key, target in var_renames.items():
+                if key in col:
+                    actual_renames[col] = target
+        
+        df_pivot = df_pivot.rename(columns=actual_renames)
+        
+        # Garante que as colunas finais existam (reindex)
+        for target in var_renames.values():
+            if target not in df_pivot.columns:
+                df_pivot[target] = np.nan
         
         # Normaliza a cultura
         df_pivot["cultura"] = self.normalize_culture_name(df_pivot["cultura"])

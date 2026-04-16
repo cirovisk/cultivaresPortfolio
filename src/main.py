@@ -93,7 +93,7 @@ def main():
     ext_cult = CultivaresExtractor(use_cache=True)
     df_cult = ext_cult.run()
     
-    ext_sidra = SidraExtractor(ano="last")
+    ext_sidra = SidraExtractor(ano="2022")
     ext_sidra.TARGET_CROPS = {k: ext_sidra.TARGET_CROPS[k] for k in culturas_alvo if k in ext_sidra.TARGET_CROPS}
     df_pam = ext_sidra.run()
     
@@ -112,17 +112,15 @@ def main():
     
     # -- Cultivares --
     if not df_cult.empty:
-        # mapear id_cultura e id_mantenedor
         df_cult_f = df_cult.copy()
         df_cult_f["id_cultura"] = df_cult_f["cultura"].map(map_cult)
         df_cult_f["id_mantenedor"] = df_cult_f["mantenedor"].map(map_mant)
         
-        # Filtra colunas do schema
         cols_cult = ["nr_registro", "id_cultura", "id_mantenedor", "cultivar", "nome_secundario", 
                      "situacao", "nr_formulario", "data_reg", "data_val"]
         df_cult_f = df_cult_f[[c for c in cols_cult if c in df_cult_f.columns]]
+        df_cult_f = df_cult_f.drop_duplicates(subset=["nr_registro"]).dropna(subset=["cultivar"])
         
-        # Insere Pandas -> SQL
         df_cult_f.to_sql("fato_registro_cultivares", engine, if_exists="append", index=False)
         log.info(f"Fato Cultivares: inseridos {len(df_cult_f)} registros.")
 
