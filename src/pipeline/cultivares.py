@@ -19,10 +19,30 @@ class CultivaresExtractor(BaseExtractor):
         "Accept": "text/csv,text/html,*/*;q=0.9",
     }
 
+    # Dicionário de Correção de Acentos (Migrado do Legacy)
+    # Mapeamento manual de variantes sem acento para a forma canônica (Dataset 2025-04).
+    _AX_CORRECTIONS = {
+        "Alocasia":   "Alocásia",
+        "Amarilis":   "Amarílis",
+        "Aralia":     "Arália",
+        "Bicuiba":    "Bicuíba",
+        "Bromelia":   "Bromélia",
+        "Cainga":     "Caingá",
+        "Catuaba":    "Catuába",
+        "Croton":     "Cróton",
+        "Euforbia":   "Eufórbia",
+        "Gipsofila":  "Gipsófila",
+        "Guaraiuva":  "Guaraiúva",
+        "Magnolia":   "Magnólia",
+        "Orquidea":   "Orquídea",
+        "OrquÍdea":   "Orquídea",
+        "Peperomia":  "Peperômia",
+        "Pera":       "Pêra",
+    }
+
     def __init__(self, use_cache: bool = True, cache_path: str = "data/relatorio_cultivares.csv"):
         super().__init__()
         self.use_cache = use_cache
-        # cache_path relativized up to project root usually
         self.cache_path = Path(cache_path).resolve()
 
     def extract(self) -> pd.DataFrame:
@@ -68,22 +88,30 @@ class CultivaresExtractor(BaseExtractor):
         if df.empty:
             return df
 
-        self.log.info("Iniciando limpeza do dataset de Cultivares...")
+        self.log.info("Iniciando limpeza avançada do dataset de Cultivares...")
         s = df.copy()
 
-        # Transformação: Limpeza de strings e sanitização
+        # Regexes de limpeza (Migradas do Legacy)
+        _RE_HTML_TAGS = re.compile(r"<[^>]{0,30}>|</\\+>", re.IGNORECASE)
+        _RE_ASPAS_ENVOLVENDO = re.compile(r"^['\"](.*)['\"]$")
+        _RE_BACKSLASH = re.compile(r"\\+'")
+
         def _limpar_texto(serie: pd.Series) -> pd.Series:
-            _RE_HTML_TAGS = re.compile(r"<[^>]{0,30}>|</\\+>", re.IGNORECASE)
             tmp = serie.copy().str.strip()
-            # Normalização: Remoção de aspas e lixo CSV
-            tmp = tmp.str.replace(r"['\"]", "", regex=True)
-            tmp = tmp.str.replace(_RE_HTML_TAGS, "", regex=True).str.strip()
-            return tmp.replace("", np.nan)
+            # Limpeza profunda
+            tmp = tmp.str.replace(_RE_ASPAS_ENVOLVENDO, r"\1", regex=True)
+            tmp = tmp.str.replace(_RE_HTML_TAGS, "", regex=True)
+            tmp = tmp.str.replace(_RE_BACKSLASH, "'", regex=True)
+            return tmp.str.strip().replace("", np.nan)
 
         colunas_texto = ["CULTIVAR", "NOME COMUM", "NOME CIENTÍFICO", "GRUPO DA ESPÉCIE", "SITUAÇÃO", "MANTENEDOR (REQUERENTE) (NOME)"]
         for col in colunas_texto:
             if col in s.columns:
                 s[col] = _limpar_texto(s[col])
+
+        # Aplicação da Correção de Acentos
+        if "NOME COMUM" in s.columns:
+            s["NOME COMUM"] = s["NOME COMUM"].replace(self._AX_CORRECTIONS)
 
         # Parsing: Extração de nome secundário (split '/')
         if "CULTIVAR" in s.columns:
@@ -111,7 +139,7 @@ class CultivaresExtractor(BaseExtractor):
 
         # Enriquecimento: Classificação de mantenedor (Público/Privado)
         if "MANTENEDOR (REQUERENTE) (NOME)" in s.columns:
-            _PUBL = ["EMBRAPA", "UNIVERSIDADE", "INSTITUTO", "EPAGRI", "PESAGRO", "IAPAR", "SECRETARIA"]
+            _PUBL = ["EMBRAPA", "UNIVERSIDADE", "INSTITUTO", "EPAGRI", "PESAGRO", "IAPAR", "SECRETARIA", "FACULDADE"]
             def cat_setor(x):
                 if pd.isna(x): return "Nulo"
                 x_u = x.upper()
