@@ -1,5 +1,6 @@
 import pandas as pd
 import requests
+import os
 from .base_extractor import BaseExtractor
 
 class SidraExtractor(BaseExtractor):
@@ -16,9 +17,13 @@ class SidraExtractor(BaseExtractor):
         "cana-de-açúcar": 39441
     }
 
-    def __init__(self, ano: str = "last"):
+    def __init__(self, ano: str = "last", data_dir: str = "data/sidra", use_cache: bool = True):
         super().__init__()
         self.ano = ano
+        self.data_dir = data_dir
+        self.use_cache = use_cache
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir, exist_ok=True)
 
     def _get_classification_codes(self) -> dict:
         """
@@ -56,6 +61,13 @@ class SidraExtractor(BaseExtractor):
         return final_map
 
     def extract(self) -> pd.DataFrame:
+        cache_file = os.path.join(self.data_dir, f"pam_sidra_{self.ano}.csv")
+        
+        if self.use_cache and os.path.exists(cache_file):
+            if not self.is_file_stale(cache_file, threshold_days=30):
+                self.log.info(f"Carregando cache SIDRA: {cache_file}")
+                return pd.read_csv(cache_file, dtype=str)
+        
         crops_ids = self._get_classification_codes()
         all_dfs = []
         
@@ -64,8 +76,6 @@ class SidraExtractor(BaseExtractor):
         
         for crop_name, crop_id in crops_ids.items():
             self.log.info(f"Buscando dados IBGE para {crop_name} (ID: {crop_id})")
-            
-            # Formato APISIDRA: /values/t/1612/n6/all/v/109,216,214/p/last/c81/{crop_id}
             url = f"https://apisidra.ibge.gov.br/values/t/1612/n6/all/v/{variables}/p/{self.ano}/c81/{crop_id}"
             
             try:
@@ -84,7 +94,13 @@ class SidraExtractor(BaseExtractor):
         if not all_dfs:
             return pd.DataFrame()
             
-        return pd.concat(all_dfs, ignore_index=True)
+        final_df = pd.concat(all_dfs, ignore_index=True)
+        
+        if self.use_cache:
+            final_df.to_csv(cache_file, index=False)
+            self.log.info(f"Cache salvo: {cache_file}")
+            
+        return final_df
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
