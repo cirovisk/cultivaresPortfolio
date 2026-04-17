@@ -75,3 +75,47 @@ def mock_cultivares_raw():
         "DATA DE VALIDADE DO REGISTRO": ["01/01/2035", "14/10/2030"]
     }
     return pd.DataFrame(data)
+
+@pytest.fixture
+def mock_conab_raw():
+    """Mock dos dados crus da CONAB (Dicionário de Dataframes)."""
+    df_prod = pd.DataFrame({
+        "ano_agricola": ["2023/24"],
+        "dsc_safra_previsao": ["1ª Safra"],
+        "uf": ["MT"],
+        "produto": ["Milho"],
+        "area_plantada_mil_ha": ["1000"],
+        "producao_mil_t": ["5000"],
+        "produtividade_mil_ha_mil_t": ["5.0"]
+    })
+    
+    df_preco = pd.DataFrame({
+        "produto": ["Milho"],
+        "uf": ["MT"],
+        "nom_municipio": ["Sorriso"],
+        "cod_ibge": ["5107909"],
+        "ano": ["2024"],
+        "mes": ["1"],
+        "valor_produto_kg": ["1,50"],
+        "dsc_nivel_comercializacao": ["Produtor"]
+    })
+    
+    return {
+        "producao_estimativa": df_prod,
+        "precos_mun_mensal": df_preco
+    }
+
+@pytest.fixture
+def mock_agrofit_raw():
+    """Mock de CSV do Agrofit cru."""
+    data = {
+        "NR_REGISTRO": ["12321", "45654"],
+        "MARCA_COMERCIAL": ["MATA TUDO", "CRESCE MAIS"],
+        "INGREDIENTE_ATIVO": ["Glifosato", "Nitrato"],
+        "TITULAR_DE_REGISTRO": ["Empresa A", "Empresa B"],
+        "CLASSE": ["Herbicida", "Fertilizante"],
+        "SITUACAO": ["Registrado", "Registrado"],
+        "CULTURA": ["Soja", "Milho"],
+        "PRAGA_NOME_COMUM": ["Galinha", "Lagarta"]
+    }
+    return pd.DataFrame(data)

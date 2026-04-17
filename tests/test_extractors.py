@@ -3,6 +3,8 @@ import pandas as pd
 from src.pipeline.cultivares import CultivaresExtractor
 from src.pipeline.sidra import SidraExtractor
 from src.pipeline.zarc import ZarcExtractor
+from src.pipeline.conab import ConabExtractor
+from src.pipeline.agrofit import AgrofitExtractor
 
 def test_cultivares_transform(mock_cultivares_raw):
     # Inicializa extrator sem depender de cache_path para teste
@@ -63,3 +65,27 @@ def test_zarc_transform(mock_zarc_raw):
     # Valida normalizacao cultura
     row = df_clean.iloc[0]
     assert row["cultura"] == "soja"
+
+def test_conab_transform(mock_conab_raw):
+    ext = ConabExtractor(data_dir="tests/mock_data")
+    processed = ext.transform(mock_conab_raw)
+    
+    assert "producao_estimativa" in processed
+    assert "precos_mun_mensal" in processed
+    
+    df_prod = processed["producao_estimativa"]
+    assert df_prod.iloc[0]["cultura"] == "milho"
+    assert df_prod.iloc[0]["producao_mil_t"] == 5000.0
+    
+    df_preco = processed["precos_mun_mensal"]
+    assert df_preco.iloc[0]["valor_kg"] == 1.50
+    assert df_preco.iloc[0]["cod_municipio_ibge"] == "5107909"
+
+def test_agrofit_transform(mock_agrofit_raw):
+    ext = AgrofitExtractor(use_cache=False)
+    df_clean = ext.transform(mock_agrofit_raw)
+    
+    assert not df_clean.empty
+    assert "nr_registro" in df_clean.columns
+    assert df_clean.iloc[0]["cultura"] == "soja"
+    assert df_clean.iloc[1]["cultura"] == "milho"

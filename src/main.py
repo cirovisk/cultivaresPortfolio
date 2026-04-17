@@ -8,7 +8,8 @@ from pipeline.sidra import SidraExtractor
 from pipeline.zarc import ZarcExtractor
 from pipeline.conab import ConabExtractor
 from pipeline.agrofit import AgrofitExtractor
-from db.manager import init_db, get_db, engine, DimCultura, DimMunicipio, DimMantenedor, FatoProducaoConab, FatoAgrofit, FatoPrecoConabMensal, FatoPrecoConabSemanal, FatoCultivar, FatoProducaoPAM, FatoRiscoZARC
+from pipeline.fertilizantes import FertilizantesExtractor
+from db.manager import init_db, get_db, engine, DimCultura, DimMunicipio, DimMantenedor, FatoProducaoConab, FatoAgrofit, FatoPrecoConabMensal, FatoPrecoConabSemanal, FatoCultivar, FatoProducaoPAM, FatoRiscoZARC, FatoFertilizante
 from sqlalchemy.dialects.postgresql import insert
 
 EXTRACTORS = {
@@ -16,7 +17,8 @@ EXTRACTORS = {
     "sidra": SidraExtractor,
     "zarc": ZarcExtractor,
     "conab": ConabExtractor,
-    "agrofit": AgrofitExtractor
+    "agrofit": AgrofitExtractor,
+    "fertilizantes": FertilizantesExtractor
 }
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -53,40 +55,44 @@ def preencher_dimensao_mantenedor(db, df_cult):
     return mant_map
 
 def preencher_dimensao_municipio(db, df_pam, df_zarc):
-    mun_map = {}
+    mun_map_ibge = {}
+    mun_map_name = {}
     
-    # Dimensões: Municípios (PAM/IBGE)
-    pam_muns = df_pam[["cod_municipio_ibge", "municipio_nome"]].drop_duplicates().dropna(subset=["cod_municipio_ibge"]) if not df_pam.empty else []
-    
-    for _, row in pam_muns.iterrows() if not df_pam.empty else []:
-        cod = str(row["cod_municipio_ibge"])[:7] # Normalização: ID IBGE (7 dígitos)
-        if not cod: continue
-        db_mun = db.query(DimMunicipio).filter(DimMunicipio.codigo_ibge == cod).first()
-        if not db_mun:
-            db_mun = DimMunicipio(codigo_ibge=cod, nome=row["municipio_nome"])
-            db.add(db_mun)
-            try: db.commit()
-            except: db.rollback()
-            db.refresh(db_mun)
-        mun_map[cod] = db_mun.id_municipio
-        
-    # Dimensões: Municípios (ZARC/MAPA)
-    if not df_zarc.empty and "cod_municipio_ibge" in df_zarc.columns:
-        zarc_muns = df_zarc[["cod_municipio_ibge", "municipio"]].drop_duplicates().dropna(subset=["cod_municipio_ibge"])
-        for _, row in zarc_muns.iterrows():
+    # 1. Municípios do PAM/IBGE (Mais precisos com Código IBGE)
+    if not df_pam.empty:
+        pam_muns = df_pam[["cod_municipio_ibge", "municipio_nome", "uf"]].drop_duplicates().dropna(subset=["cod_municipio_ibge"])
+        for _, row in pam_muns.iterrows():
             cod = str(row["cod_municipio_ibge"])[:7]
-            if not cod or cod in mun_map: continue
-            
+            uf = row["uf"] if "uf" in row else None
             db_mun = db.query(DimMunicipio).filter(DimMunicipio.codigo_ibge == cod).first()
             if not db_mun:
-                db_mun = DimMunicipio(codigo_ibge=cod, nome=row["municipio"])
+                db_mun = DimMunicipio(codigo_ibge=cod, nome=row["municipio_nome"], uf=uf)
                 db.add(db_mun)
                 try: db.commit()
                 except: db.rollback()
                 db.refresh(db_mun)
-            mun_map[cod] = db_mun.id_municipio
+            mun_map_ibge[cod] = db_mun.id_municipio
+            if uf: mun_map_name[(row["municipio_nome"].lower().strip(), uf.upper())] = db_mun.id_municipio
+        
+    # 2. Municípios do ZARC/MAPA
+    if not df_zarc.empty and "cod_municipio_ibge" in df_zarc.columns:
+        zarc_muns = df_zarc[["cod_municipio_ibge", "municipio", "uf"]].drop_duplicates().dropna(subset=["cod_municipio_ibge"])
+        for _, row in zarc_muns.iterrows():
+            cod = str(row["cod_municipio_ibge"])[:7]
+            uf = row["uf"] if "uf" in row else None
+            if cod in mun_map_ibge: continue
             
-    return mun_map
+            db_mun = db.query(DimMunicipio).filter(DimMunicipio.codigo_ibge == cod).first()
+            if not db_mun:
+                db_mun = DimMunicipio(codigo_ibge=cod, nome=row["municipio"], uf=uf)
+                db.add(db_mun)
+                try: db.commit()
+                except: db.rollback()
+                db.refresh(db_mun)
+            mun_map_ibge[cod] = db_mun.id_municipio
+            if uf: mun_map_name[(row["municipio"].lower().strip(), uf.upper())] = db_mun.id_municipio
+            
+    return mun_map_ibge, mun_map_name
 
 def clear_facts():
     # DDL: Limpeza de tabelas fato (Safe re-run)
@@ -95,6 +101,50 @@ def clear_facts():
         # Tabelas de preço são mantidas para acumular série histórica (conforme pedido pelo USER).
         conn.execute(text("TRUNCATE TABLE fato_registro_cultivares, fato_producao_pam, fato_risco_zarc, fato_producao_conab, fato_agrofit RESTART IDENTITY CASCADE;"))
         log.info("Tabelas Fato (exceto Preços) truncadas para recarga segura.")
+
+def get_cultura_id(nome_cultura, mapping):
+    if not nome_cultura: return None
+    
+    def norm(s):
+        import unicodedata
+        s = str(s).lower().strip()
+        return "".join(c for c in unicodedata.normalize('NFKD', s) if unicodedata.category(c) != 'Mn')
+
+    # Tenta match exato primeiro
+    if nome_cultura in mapping: return mapping[nome_cultura]
+    
+    nombre_norm = norm(nome_cultura)
+    for alvo, cid in mapping.items():
+        alvo_norm = norm(alvo)
+        if alvo_norm in nombre_norm or nombre_norm in alvo_norm:
+            return cid
+    return None
+
+def upsert_data(model, df, index_elements):
+    if df.empty: return
+    
+    # Converte DF para dicts
+    records = df.to_dict(orient="records")
+    
+    # Filtra colunas que existem no modelo
+    from sqlalchemy import inspect
+    model_cols = [c.key for c in inspect(model).mapper.column_attrs]
+    valid_records = []
+    for r in records:
+        valid_records.append({k: v for k, v in r.items() if k in model_cols})
+
+    stmt = insert(model).values(valid_records)
+    
+    # Colunas para atualizar em caso de conflito (todas exceto as do índice)
+    update_cols = {c: stmt.excluded[c] for c in model_cols if c not in index_elements and c != 'data_modificacao'}
+    
+    upsert_stmt = stmt.on_conflict_do_update(
+        index_elements=index_elements,
+        set_=update_cols
+    )
+    
+    with engine.begin() as conn:
+        conn.execute(upsert_stmt)
 
 def main():
     parser = argparse.ArgumentParser(description="Pipeline Agro-Dados")
@@ -127,8 +177,8 @@ def main():
             instances[source] = ConabExtractor(force_refresh=args.refresh_conab)
         elif source == "agrofit":
             instances[source] = AgrofitExtractor()
-
-
+        elif source == "fertilizantes":
+            instances[source] = FertilizantesExtractor()
 
     # Extração: Processamento paralelo (Threads)
     log.info("Executando extrações em paralelo...")
@@ -150,62 +200,16 @@ def main():
     df_zarc = dfs.get("zarc", pd.DataFrame())
     df_conab = dfs.get("conab", pd.DataFrame())
     df_agrofit = dfs.get("agrofit", pd.DataFrame())
-
-
+    df_fert = dfs.get("fertilizantes", pd.DataFrame())
     
     # DML: Carga de tabelas dimensão
     log.info("Carregando Dimensões (Cultura, Mantenedor, Município)...")
     map_cult = preencher_dimensao_cultura(db, culturas_alvo)
     map_mant = preencher_dimensao_mantenedor(db, df_cult)
-    map_mun = preencher_dimensao_municipio(db, df_pam, df_zarc)
+    map_mun, map_mun_name = preencher_dimensao_municipio(db, df_pam, df_zarc)
     
     # DML: Carga de tabelas fato (FK Lookup)
     log.info("Mapeando Chaves Estrangeiras nas Tabelas Fato...")
-    
-    # Lookup: Resolução de ID por cultura (Flex Search)
-    def get_cultura_id(nome_cultura, mapping):
-        if not nome_cultura: return None
-        
-        def norm(s):
-            import unicodedata
-            s = str(s).lower().strip()
-            return "".join(c for c in unicodedata.normalize('NFKD', s) if unicodedata.category(c) != 'Mn')
-
-        # Tenta match exato primeiro
-        if nome_cultura in mapping: return mapping[nome_cultura]
-        
-        nombre_norm = norm(nome_cultura)
-        for alvo, cid in mapping.items():
-            alvo_norm = norm(alvo)
-            if alvo_norm in nombre_norm or nombre_norm in alvo_norm:
-                return cid
-        return None
-
-    def upsert_data(model, df, index_elements):
-        if df.empty: return
-        
-        # Converte DF para dicts
-        records = df.to_dict(orient="records")
-        
-        # Filtra colunas que existem no modelo
-        from sqlalchemy import inspect
-        model_cols = [c.key for c in inspect(model).mapper.column_attrs]
-        valid_records = []
-        for r in records:
-            valid_records.append({k: v for k, v in r.items() if k in model_cols})
-
-        stmt = insert(model).values(valid_records)
-        
-        # Colunas para atualizar em caso de conflito (todas exceto as do índice)
-        update_cols = {c: stmt.excluded[c] for c in model_cols if c not in index_elements and c != 'data_modificacao'}
-        
-        upsert_stmt = stmt.on_conflict_do_update(
-            index_elements=index_elements,
-            set_=update_cols
-        )
-        
-        with engine.begin() as conn:
-            conn.execute(upsert_stmt)
 
     # Fatos: Registros SNPC (MAPA)
     if not df_cult.empty:
@@ -325,6 +329,21 @@ def main():
         
         upsert_data(FatoAgrofit, df_agrofit_f, index_elements=['id_cultura', 'nr_registro', 'marca_comercial', 'praga_comum'])
         log.info(f"Fato Agrofit: Upsert concluído para {len(df_agrofit_f)} registros.")
+    
+    # Fatos: Fertilizantes (Estabelecimentos)
+    if not df_fert.empty:
+        df_fert_f = df_fert.copy()
+        
+        # Mapeamento de Município por Nome + UF
+        df_fert_f["id_municipio"] = df_fert_f.apply(
+            lambda x: map_mun_name.get((x["municipio"].lower().strip(), x["uf"].upper())), axis=1
+        )
+        
+        # Filtros e Upsert
+        df_fert_f = df_fert_f.drop_duplicates(subset=["nr_registro_estabelecimento"])
+        
+        upsert_data(FatoFertilizante, df_fert_f, index_elements=['nr_registro_estabelecimento'])
+        log.info(f"Fato Fertilizantes: Upsert concluído para {len(df_fert_f)} estabelecimentos.")
 
     log.info("--- Pipeline Concluído ---")
 

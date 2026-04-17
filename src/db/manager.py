@@ -138,6 +138,22 @@ class FatoPrecoConabSemanal(Base):
 
     __table_args__ = (UniqueConstraint('id_cultura', 'id_municipio', 'uf', 'ano', 'mes', 'semana', 'nivel_comercializacao', name='_conab_preco_semanal_uc'),)
 
+class FatoFertilizante(Base):
+    __tablename__ = "fato_fertilizantes_estabelecimentos"
+    id_fertilizante = Column(Integer, primary_key=True, autoincrement=True)
+    uf = Column(String(2))
+    municipio = Column(String)
+    id_municipio = Column(Integer, ForeignKey("dim_municipio.id_municipio"), nullable=True)
+    nr_registro_estabelecimento = Column(String, unique=True, index=True, nullable=False)
+    status_registro = Column(String)
+    cnpj = Column(String)
+    razao_social = Column(String)
+    nome_fantasia = Column(String)
+    area_atuacao = Column(String)
+    atividade = Column(String)
+    classificacao = Column(String)
+    data_modificacao = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
 # Operações: Gerenciamento de Conexão
 
 def init_db():
