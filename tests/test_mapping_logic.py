@@ -32,23 +32,31 @@ def test_preencher_dimensao_mantenedor(db_session):
     assert len(rows) == 2
 
 def test_preencher_dimensao_municipio(db_session):
-    """Testa o mapeamento de municípios a partir de PAM e ZARC."""
+    """Testa o mapeamento de municípios a partir de PAM e ZARC.
+    A função retorna tupla (mun_map_ibge, mun_map_name).
+    """
     df_pam = pd.DataFrame({
         "cod_municipio_ibge": ["1200013", "1200054"],
-        "municipio_nome": ["Mun A", "Mun B"]
+        "municipio_nome": ["Mun A", "Mun B"],
+        "uf": ["AC", "AC"],
     })
     df_zarc = pd.DataFrame({
         "cod_municipio_ibge": ["1200013", "1300021"],
-        "municipio": ["Mun A", "Mun C"]
+        "municipio": ["Mun A", "Mun C"],
+        "uf": ["AC", "AM"],
     })
-    
-    mapping = preencher_dimensao_municipio(db_session, df_pam, df_zarc)
-    
-    # Mun A (comum), Mun B (PAM), Mun C (ZARC) -> 3 muns
-    assert len(mapping) == 3
-    assert "1200013" in mapping
-    assert "1300021" in mapping
-    
+
+    mun_map_ibge, mun_map_name = preencher_dimensao_municipio(db_session, df_pam, df_zarc)
+
+    # Mun A (comum), Mun B (PAM), Mun C (ZARC) -> 3 municípios distintos
+    assert len(mun_map_ibge) == 3
+    assert "1200013" in mun_map_ibge
+    assert "1300021" in mun_map_ibge
+
+    # mun_map_name indexado por (nome_lower, uf_upper)
+    assert ("mun a", "AC") in mun_map_name
+    assert ("mun c", "AM") in mun_map_name
+
     rows = db_session.query(DimMunicipio).all()
     assert len(rows) == 3
 

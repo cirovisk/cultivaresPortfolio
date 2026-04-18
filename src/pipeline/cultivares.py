@@ -88,7 +88,7 @@ class CultivaresExtractor(BaseExtractor):
         if df.empty:
             return df
 
-        self.log.info("Iniciando limpeza avançada do dataset de Cultivares...")
+        self.log.info(f"Iniciando limpeza do dataset de Cultivares: {len(df)} linha(s) recebida(s).")
         s = df.copy()
 
         # Regexes de limpeza (Migradas do Legacy)
@@ -111,15 +111,32 @@ class CultivaresExtractor(BaseExtractor):
 
         # Aplicação da Correção de Acentos
         if "NOME COMUM" in s.columns:
+            antes = s["NOME COMUM"].copy()
             s["NOME COMUM"] = s["NOME COMUM"].replace(self._AX_CORRECTIONS)
+            corrigidos = (s["NOME COMUM"] != antes).sum()
+            if corrigidos:
+                self.log.info(f"Correção de acentos: {corrigidos} valor(es) corrigido(s) em 'NOME COMUM'.")
 
         # Parsing: Extração de nome secundário (split '/')
+        # Nota: o regex de aspas acima não remove aspas que envolvem apenas o
+        # nome principal (ex: "'BONANZA' / BONA"), pois a string completa não
+        # termina com aspas. Reaplicamos após o split em cada fragmento.
         if "CULTIVAR" in s.columns:
             split_c = s["CULTIVAR"].str.split("/", n=1, expand=True)
-            s["CULTIVAR"] = split_c[0].str.strip()
+            s["CULTIVAR"] = (
+                split_c[0].str.strip()
+                .str.replace(_RE_ASPAS_ENVOLVENDO, r"\1", regex=True)
+                .str.strip()
+            )
             if split_c.shape[1] > 1:
-                s["NOME SECUNDÁRIO"] = split_c[1].str.strip()
+                s["NOME SECUNDÁRIO"] = (
+                    split_c[1].str.strip()
+                    .str.replace(_RE_ASPAS_ENVOLVENDO, r"\1", regex=True)
+                    .str.strip()
+                )
                 s["NOME SECUNDÁRIO"] = s["NOME SECUNDÁRIO"].replace("", np.nan)
+                n_sec = s["NOME SECUNDÁRIO"].notna().sum()
+                self.log.info(f"Parsing nomes secundários: {n_sec} cultivar(es) com nome alternativo (split '/').")
             else:
                 s["NOME SECUNDÁRIO"] = pd.NA
 
@@ -132,7 +149,11 @@ class CultivaresExtractor(BaseExtractor):
         # Transformação: Tipagem de data (ISO 8601)
         for c in ["DATA DO REGISTRO", "DATA DE VALIDADE DO REGISTRO"]:
             if c in s.columns:
+                antes_nulos = s[c].isna().sum()
                 s[c] = pd.to_datetime(s[c], dayfirst=True, errors="coerce")
+                novos_nulos = s[c].isna().sum() - antes_nulos
+                if novos_nulos > 0:
+                    self.log.warning(f"Parsing de data '{c}': {novos_nulos} valor(es) não convertido(s) → NaT.")
 
         if "DATA DO REGISTRO" in s.columns:
             s["ANO"] = s["DATA DO REGISTRO"].dt.year.astype("Int64")
@@ -162,8 +183,17 @@ class CultivaresExtractor(BaseExtractor):
             "MANTENEDOR (REQUERENTE) (NOME)": "mantenedor",
             "CULTURA_NORMALIZADA": "cultura"
         }
-        
+
         s = s.rename(columns=renames)
+        antes_dedup = len(s)
         s = s.drop_duplicates()
-        
+        descartados = antes_dedup - len(s)
+        if descartados:
+            self.log.info(f"drop_duplicates: {descartados} linha(s) duplicada(s) removida(s).")
+
+        self.log.info(
+            f"Transform concluído: {len(s)} linha(s) resultantes. "
+            f"Nulos em 'nr_registro': {s.get('nr_registro', s.get('Nº REGISTRO')).isna().sum() if 'nr_registro' in s.columns or 'Nº REGISTRO' in s.columns else 'N/A'}."
+        )
+
         return s

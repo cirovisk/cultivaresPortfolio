@@ -27,11 +27,14 @@ class FertilizantesExtractor(BaseExtractor):
         is_stale = self.is_file_stale(local_path, threshold_days=30)
 
         if self.force_refresh or not os.path.exists(local_path) or is_stale:
+            reason = "forçado" if self.force_refresh else ("ausente" if not os.path.exists(local_path) else "desatualizado")
+            self.log.info(f"Iniciando download do SIPEAGRO ({reason}): {self.DOWNLOAD_URL}")
             self._download_file(local_path)
+        else:
+            self.log.info(f"Cache SIPEAGRO válido encontrado: {local_path}")
 
         if os.path.exists(local_path):
             try:
-                # O arquivo usa ; como separador e encoding latin1
                 df = pd.read_csv(
                     local_path,
                     sep=";",
@@ -39,15 +42,16 @@ class FertilizantesExtractor(BaseExtractor):
                     dtype=str,
                     skipinitialspace=True
                 )
+                self.log.info(f"SIPEAGRO carregado: {len(df)} linha(s), {len(df.columns)} coluna(s).")
                 return df
             except Exception as e:
                 self.log.error(f"Erro ao ler {self.FILENAME}: {e}")
-        
+
         return pd.DataFrame()
 
     def _download_file(self, local_path):
         self.log.info(f"Fazendo download de {self.DOWNLOAD_URL}...")
-        
+
         # Arquivamento (Idempotência/Histórico)
         if os.path.exists(local_path):
             import shutil
@@ -59,20 +63,42 @@ class FertilizantesExtractor(BaseExtractor):
             shutil.move(local_path, archive_path)
             self.log.info(f"Arquivo antigo arquivado em {archive_path}")
 
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
         try:
-            # Necessário User-Agent para evitar bloqueio
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-            resp = requests.get(self.DOWNLOAD_URL, headers=headers, timeout=120, verify=False)
+            # Primeira tentativa: com verificação SSL habilitada
+            resp = requests.get(self.DOWNLOAD_URL, headers=headers, timeout=120, verify=True)
             resp.raise_for_status()
-            with open(local_path, "wb") as f:
-                f.write(resp.content)
-            self.log.info(f"Download concluído: {self.FILENAME}")
+        except requests.exceptions.SSLError as ssl_err:
+            # O servidor do MAPA/SIPEAGRO ocasionalmente apresenta problema de cadeia de certificado.
+            # Segunda tentativa sem verificação, com log de aviso explícito.
+            self.log.warning(
+                f"SSL handshake falhou ({ssl_err}). "
+                "Repetindo sem verificação de certificado. "
+                "Recomendação: instale o certificado raiz do MAPA ou adicione-o ao bundle do certifi."
+            )
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            try:
+                resp = requests.get(self.DOWNLOAD_URL, headers=headers, timeout=120, verify=False)
+                resp.raise_for_status()
+            except Exception as e:
+                self.log.error(f"Erro no download mesmo sem verificação SSL: {e}")
+                return
         except Exception as e:
             self.log.error(f"Erro no download de {self.DOWNLOAD_URL}: {e}")
+            return
+
+        with open(local_path, "wb") as f:
+            f.write(resp.content)
+        self.log.info(f"Download concluído: {self.FILENAME} ({len(resp.content) / 1024:.1f} KB)")
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
             return df
+
+        self.log.info(f"Transformando SIPEAGRO: {len(df)} linha(s) recebida(s).")
 
         # Mapeamento de colunas para o banco de dados
         renames = {
@@ -87,11 +113,17 @@ class FertilizantesExtractor(BaseExtractor):
             "ATIVIDADE": "atividade",
             "CLASSIFICACAO": "classificacao"
         }
-        
+
         df = df.rename(columns=renames)
-        
+
         # Limpeza básica
-        for col in df.columns:
+        str_cols = [c for c in df.columns if df[c].dtype == object]
+        for col in str_cols:
             df[col] = df[col].str.strip()
-            
+
+        sem_registro = df["nr_registro_estabelecimento"].isna().sum() if "nr_registro_estabelecimento" in df.columns else "N/A"
+        self.log.info(
+            f"Transform SIPEAGRO concluído: {len(df)} estabelecimento(s). "
+            f"Sem nú de registro: {sem_registro}."
+        )
         return df

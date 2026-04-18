@@ -88,6 +88,7 @@ class ConabExtractor(BaseExtractor):
         """
         Transformação polimórfica baseada na chave do dataset.
         """
+        self.log.info(f"Iniciando transformação CONAB: {list(dataframes.keys())} dataset(s) recebidos.")
         processed = {}
         
         # 1. Produção
@@ -108,6 +109,7 @@ class ConabExtractor(BaseExtractor):
         return processed
 
     def _transform_producao(self, df):
+        self.log.info(f"CONAB Produção: {len(df)} linha(s) brutas recebidas.")
         df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
         renames = {
             "ano_agricola": "ano_agricola",
@@ -125,9 +127,12 @@ class ConabExtractor(BaseExtractor):
         
         df["cultura"] = self.normalize_culture_name(df["produto_raw"])
         cols_final = ["ano_agricola", "safra", "uf", "cultura", "area_plantada_mil_ha", "producao_mil_t", "produtividade_t_ha"]
-        return df[cols_final]
+        df_out = df[cols_final]
+        self.log.info(f"CONAB Produção: {len(df_out)} linha(s) após normalização. Culturas: {sorted(df_out['cultura'].dropna().unique().tolist())}.")
+        return df_out
 
     def _transform_precos(self, df, freq="mensal"):
+        self.log.info(f"CONAB Preços ({freq}): {len(df)} linha(s) brutas recebidas.")
         df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
         renames = {
             "produto": "produto_raw",

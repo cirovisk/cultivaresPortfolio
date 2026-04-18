@@ -92,9 +92,11 @@ class SidraExtractor(BaseExtractor):
                 self.log.error(f"Exceção ao buscar {crop_name}: {e}")
         
         if not all_dfs:
+            self.log.warning("Extrator SIDRA: nenhum dado retornado para todas as culturas alvo. Verifique conectividade ou IDs de categoria.")
             return pd.DataFrame()
-            
+
         final_df = pd.concat(all_dfs, ignore_index=True)
+        self.log.info(f"Extrator SIDRA: {len(final_df)} linha(s) brutas consolidadas de {len(all_dfs)} cultura(s).")
         
         if self.use_cache:
             final_df.to_csv(cache_file, index=False)
@@ -105,7 +107,9 @@ class SidraExtractor(BaseExtractor):
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
             return df
-            
+
+        self.log.info(f"Transformando PAM/SIDRA: {len(df)} linha(s) recebida(s).")
+
         # Transformação: Mapeamento de colunas SIDRA
         col_map = {
             "D2N": "variavel",
@@ -115,13 +119,21 @@ class SidraExtractor(BaseExtractor):
             "D3N": "ano",
             "cultura_raw": "cultura"
         }
-        
+
+        ausentes = [k for k in col_map if k not in df.columns]
+        if ausentes:
+            self.log.warning(f"PAM/SIDRA: colunas esperadas ausentes no DataFrame bruto: {ausentes}")
+
         df_clean = df.rename(columns=col_map)
-        df_clean = df_clean[list(col_map.values())].copy()
+        df_clean = df_clean[[c for c in col_map.values() if c in df_clean.columns]].copy()
         
         # Sanitização: Conversão de nulos IBGE ('...', '-') para NaN
         import numpy as np
+        nulos_antes = df_clean["valor"].isna().sum()
         df_clean["valor"] = pd.to_numeric(df_clean["valor"].replace(['...', '-'], np.nan), errors='coerce')
+        nulos_depois = df_clean["valor"].isna().sum()
+        if nulos_depois > nulos_antes:
+            self.log.info(f"PAM/SIDRA: {nulos_depois - nulos_antes} valor(es) não numérico(s) do IBGE ('...', '-') convertido(s) para NaN.")
         
         # Transformação: Pivoteamento de variáveis para colunas fato
         df_pivot = df_clean.pivot_table(
@@ -129,6 +141,7 @@ class SidraExtractor(BaseExtractor):
             columns="variavel",
             values="valor"
         ).reset_index()
+        self.log.info(f"PAM/SIDRA pivot: {len(df_pivot)} combinação(ões) (município × cultura × ano).")
         
         # Limpar o nome das variáveis para os nomes de colunas usando snake_case
         df_pivot.columns.name = None
