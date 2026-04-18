@@ -34,8 +34,8 @@ class BaseExtractor(ABC):
         df = self.transform(df)
         return df
 
-    def normalize_culture_name(self, series: pd.Series) -> pd.Series:
-        """Normalização: Padronização de nomes de cultura."""
+    def normalize_string(self, series: pd.Series) -> pd.Series:
+        """Normalização: Padronização de nomes (remuneração de acentos, lowercase)."""
         import unicodedata
         
         def remove_accents(input_str):

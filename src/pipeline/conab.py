@@ -24,20 +24,19 @@ class ConabExtractor(BaseExtractor):
         super().__init__()
         self.data_dir = data_dir
         self.force_refresh = force_refresh
-        # Garante que o diretório existe (Persistence check)
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir, exist_ok=True)
 
     def extract(self) -> dict:
         """
         Extrai todos os arquivos configurados. 
-        Implementa política de atualização automática: se o arquivo não existe, baixa.
+        Implementa atualização automática: se o arquivo não existe, baixa.
         """
         dataframes = {}
         for key, filename in self.FILES.items():
             local_path = os.path.join(self.data_dir, filename)
             
-            # Lógica de atualização inteligente:
+            # Lógica de atualização:
             is_stale = self.is_file_stale(local_path, threshold_days=(7 if "semanal" in key else 30))
             
             if self.force_refresh or not os.path.exists(local_path) or is_stale:
@@ -125,7 +124,7 @@ class ConabExtractor(BaseExtractor):
         for col in cols_num:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
         
-        df["cultura"] = self.normalize_culture_name(df["produto_raw"])
+        df["cultura"] = self.normalize_string(df["produto_raw"])
         cols_final = ["ano_agricola", "safra", "uf", "cultura", "area_plantada_mil_ha", "producao_mil_t", "produtividade_t_ha"]
         df_out = df[cols_final]
         self.log.info(f"CONAB Produção: {len(df_out)} linha(s) após normalização. Culturas: {sorted(df_out['cultura'].dropna().unique().tolist())}.")
@@ -152,7 +151,7 @@ class ConabExtractor(BaseExtractor):
         df["valor_kg"] = pd.to_numeric(df["valor_kg"].str.replace(",", "."), errors="coerce").fillna(0.0)
         df["ano"] = pd.to_numeric(df["ano"], errors="coerce").fillna(0).astype(int)
         df["mes"] = pd.to_numeric(df["mes"], errors="coerce").fillna(0).astype(int)
-        df["cultura"] = self.normalize_culture_name(df["produto_raw"])
+        df["cultura"] = self.normalize_string(df["produto_raw"])
         
         cols = ["cultura", "uf", "ano", "mes", "valor_kg", "nivel_comercializacao"]
         if "cod_municipio_ibge" in df.columns:

@@ -19,9 +19,8 @@ class CultivaresExtractor(BaseExtractor):
         "Accept": "text/csv,text/html,*/*;q=0.9",
     }
 
-    # Dicionário de Correção de Acentos (Migrado do Legacy)
-    # Mapeamento manual de variantes sem acento para a forma canônica (Dataset 2025-04).
-    _AX_CORRECTIONS = {
+    # Mapeamento manual de variantes sem acento
+    ACCENT_CORRECTIONS = {
         "Alocasia":   "Alocásia",
         "Amarilis":   "Amarílis",
         "Aralia":     "Arália",
@@ -89,7 +88,7 @@ class CultivaresExtractor(BaseExtractor):
             return df
 
         self.log.info(f"Iniciando limpeza do dataset de Cultivares: {len(df)} linha(s) recebida(s).")
-        s = df.copy()
+        df_clean = df.copy()
 
         # Regexes de limpeza (Migradas do Legacy)
         _RE_HTML_TAGS = re.compile(r"<[^>]{0,30}>|</\\+>", re.IGNORECASE)
@@ -98,7 +97,6 @@ class CultivaresExtractor(BaseExtractor):
 
         def _limpar_texto(serie: pd.Series) -> pd.Series:
             tmp = serie.copy().str.strip()
-            # Limpeza profunda
             tmp = tmp.str.replace(_RE_ASPAS_ENVOLVENDO, r"\1", regex=True)
             tmp = tmp.str.replace(_RE_HTML_TAGS, "", regex=True)
             tmp = tmp.str.replace(_RE_BACKSLASH, "'", regex=True)
@@ -106,69 +104,63 @@ class CultivaresExtractor(BaseExtractor):
 
         colunas_texto = ["CULTIVAR", "NOME COMUM", "NOME CIENTÍFICO", "GRUPO DA ESPÉCIE", "SITUAÇÃO", "MANTENEDOR (REQUERENTE) (NOME)"]
         for col in colunas_texto:
-            if col in s.columns:
-                s[col] = _limpar_texto(s[col])
+            if col in df_clean.columns:
+                df_clean[col] = _limpar_texto(df_clean[col])
 
-        # Aplicação da Correção de Acentos
-        if "NOME COMUM" in s.columns:
-            antes = s["NOME COMUM"].copy()
-            s["NOME COMUM"] = s["NOME COMUM"].replace(self._AX_CORRECTIONS)
-            corrigidos = (s["NOME COMUM"] != antes).sum()
+        if "NOME COMUM" in df_clean.columns:
+            antes = df_clean["NOME COMUM"].copy()
+            df_clean["NOME COMUM"] = df_clean["NOME COMUM"].replace(self.ACCENT_CORRECTIONS)
+            corrigidos = (df_clean["NOME COMUM"] != antes).sum()
             if corrigidos:
                 self.log.info(f"Correção de acentos: {corrigidos} valor(es) corrigido(s) em 'NOME COMUM'.")
 
-        # Parsing: Extração de nome secundário (split '/')
-        # Nota: o regex de aspas acima não remove aspas que envolvem apenas o
-        # nome principal (ex: "'BONANZA' / BONA"), pois a string completa não
-        # termina com aspas. Reaplicamos após o split em cada fragmento.
-        if "CULTIVAR" in s.columns:
-            split_c = s["CULTIVAR"].str.split("/", n=1, expand=True)
-            s["CULTIVAR"] = (
+        if "CULTIVAR" in df_clean.columns:
+            split_c = df_clean["CULTIVAR"].str.split("/", n=1, expand=True)
+            df_clean["CULTIVAR"] = (
                 split_c[0].str.strip()
                 .str.replace(_RE_ASPAS_ENVOLVENDO, r"\1", regex=True)
                 .str.strip()
             )
             if split_c.shape[1] > 1:
-                s["NOME SECUNDÁRIO"] = (
+                df_clean["NOME SECUNDÁRIO"] = (
                     split_c[1].str.strip()
                     .str.replace(_RE_ASPAS_ENVOLVENDO, r"\1", regex=True)
                     .str.strip()
                 )
-                s["NOME SECUNDÁRIO"] = s["NOME SECUNDÁRIO"].replace("", np.nan)
-                n_sec = s["NOME SECUNDÁRIO"].notna().sum()
+                df_clean["NOME SECUNDÁRIO"] = df_clean["NOME SECUNDÁRIO"].replace("", np.nan)
+                n_sec = df_clean["NOME SECUNDÁRIO"].notna().sum()
                 self.log.info(f"Parsing nomes secundários: {n_sec} cultivar(es) com nome alternativo (split '/').")
             else:
-                s["NOME SECUNDÁRIO"] = pd.NA
+                df_clean["NOME SECUNDÁRIO"] = pd.NA
 
         # Normalização: Alinhamento de nomes para cruzamento
-        if "NOME COMUM" in s.columns:
-            s["CULTURA_NORMALIZADA"] = self.normalize_culture_name(s["NOME COMUM"])
-        elif "GRUPO DA ESPÉCIE" in s.columns:
-            s["CULTURA_NORMALIZADA"] = self.normalize_culture_name(s["GRUPO DA ESPÉCIE"])
+        if "NOME COMUM" in df_clean.columns:
+            df_clean["CULTURA_NORMALIZADA"] = self.normalize_string(df_clean["NOME COMUM"])
+        elif "GRUPO DA ESPÉCIE" in df_clean.columns:
+            df_clean["CULTURA_NORMALIZADA"] = self.normalize_string(df_clean["GRUPO DA ESPÉCIE"])
 
-        # Transformação: Tipagem de data (ISO 8601)
+        # Transformação de data (ISO 8601)
         for c in ["DATA DO REGISTRO", "DATA DE VALIDADE DO REGISTRO"]:
-            if c in s.columns:
-                antes_nulos = s[c].isna().sum()
-                s[c] = pd.to_datetime(s[c], dayfirst=True, errors="coerce")
-                novos_nulos = s[c].isna().sum() - antes_nulos
+            if c in df_clean.columns:
+                antes_nulos = df_clean[c].isna().sum()
+                df_clean[c] = pd.to_datetime(df_clean[c], dayfirst=True, errors="coerce")
+                novos_nulos = df_clean[c].isna().sum() - antes_nulos
                 if novos_nulos > 0:
                     self.log.warning(f"Parsing de data '{c}': {novos_nulos} valor(es) não convertido(s) → NaT.")
 
-        if "DATA DO REGISTRO" in s.columns:
-            s["ANO"] = s["DATA DO REGISTRO"].dt.year.astype("Int64")
+        if "DATA DO REGISTRO" in df_clean.columns:
+            df_clean["ANO"] = df_clean["DATA DO REGISTRO"].dt.year.astype("Int64")
 
-        # Enriquecimento: Classificação de mantenedor (Público/Privado)
-        if "MANTENEDOR (REQUERENTE) (NOME)" in s.columns:
+        # Enriquecimento: Classificação de mantenedor (Público/Privado), dicionário de palavras-chaves minerado manualmente
+        if "MANTENEDOR (REQUERENTE) (NOME)" in df_clean.columns:
             _PUBL = ["EMBRAPA", "UNIVERSIDADE", "INSTITUTO", "EPAGRI", "PESAGRO", "IAPAR", "SECRETARIA", "FACULDADE"]
             def cat_setor(x):
                 if pd.isna(x): return "Nulo"
                 x_u = x.upper()
                 if any(p in x_u for p in _PUBL): return "Público"
                 return "Privado"
-            s["SETOR"] = s["MANTENEDOR (REQUERENTE) (NOME)"].apply(cat_setor)
+            df_clean["SETOR"] = df_clean["MANTENEDOR (REQUERENTE) (NOME)"].apply(cat_setor)
 
-        # Transformação: Mapeamento de colunas para banco
         renames = {
             "CULTIVAR": "cultivar",
             "NOME SECUNDÁRIO": "nome_secundario",
@@ -184,16 +176,16 @@ class CultivaresExtractor(BaseExtractor):
             "CULTURA_NORMALIZADA": "cultura"
         }
 
-        s = s.rename(columns=renames)
-        antes_dedup = len(s)
-        s = s.drop_duplicates()
-        descartados = antes_dedup - len(s)
+        df_clean = df_clean.rename(columns=renames)
+        antes_dedup = len(df_clean)
+        df_clean = df_clean.drop_duplicates()
+        descartados = antes_dedup - len(df_clean)
         if descartados:
             self.log.info(f"drop_duplicates: {descartados} linha(s) duplicada(s) removida(s).")
 
         self.log.info(
-            f"Transform concluído: {len(s)} linha(s) resultantes. "
-            f"Nulos em 'nr_registro': {s.get('nr_registro', s.get('Nº REGISTRO')).isna().sum() if 'nr_registro' in s.columns or 'Nº REGISTRO' in s.columns else 'N/A'}."
+            f"Transform concluído: {len(df_clean)} linha(s) resultantes. "
+            f"Nulos em 'nr_registro': {df_clean.get('nr_registro', df_clean.get('Nº REGISTRO')).isna().sum() if 'nr_registro' in df_clean.columns or 'Nº REGISTRO' in df_clean.columns else 'N/A'}."
         )
 
-        return s
+        return df_clean

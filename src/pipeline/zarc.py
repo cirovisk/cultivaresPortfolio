@@ -51,7 +51,6 @@ class ZarcExtractor(BaseExtractor):
                             resp_csv = requests.get(csv_url, headers=headers, timeout=60)
                             resp_csv.raise_for_status()
                             
-                            # Salva no cache para uso futuro
                             with open(cache_file, "wb") as f:
                                 f.write(resp_csv.content)
                                 
@@ -80,7 +79,6 @@ class ZarcExtractor(BaseExtractor):
             
         df_clean = df.copy()
         
-        # Normalização: Sanitização de cabeçalhos
         df_clean.columns = (
             df_clean.columns.str.lower()
             .str.replace(" ", "_")
@@ -90,12 +88,12 @@ class ZarcExtractor(BaseExtractor):
             .str.decode('utf-8')
         )
         
-        col_ibge = [c for c in df_clean.columns if "ibge" in c or "cd_mun" in c or "codigo_mun" in c]
-        if col_ibge:
-            df_clean = df_clean.rename(columns={col_ibge[0]: "cod_municipio_ibge"})
+        ibge_cols = [c for c in df_clean.columns if "ibge" in c or "cd_mun" in c or "codigo_mun" in c]
+        if ibge_cols:
+            df_clean = df_clean.rename(columns={ibge_cols[0]: "cod_municipio_ibge"})
         
         if "cultura_raw" in df_clean.columns:
-            df_clean["cultura"] = self.normalize_culture_name(df_clean["cultura_raw"])
+            df_clean["cultura"] = self.normalize_string(df_clean["cultura_raw"])
             df_clean = df_clean.drop(columns=["cultura_raw"])
             
         return df_clean

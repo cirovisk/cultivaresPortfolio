@@ -100,7 +100,6 @@ class FertilizantesExtractor(BaseExtractor):
 
         self.log.info(f"Transformando SIPEAGRO: {len(df)} linha(s) recebida(s).")
 
-        # Mapeamento de colunas para o banco de dados
         renames = {
             "UNIDADE_DA_FEDERACAO": "uf",
             "MUNICIPIO": "municipio",
@@ -116,7 +115,6 @@ class FertilizantesExtractor(BaseExtractor):
 
         df = df.rename(columns=renames)
 
-        # Limpeza básica
         str_cols = [c for c in df.columns if df[c].dtype == object]
         for col in str_cols:
             df[col] = df[col].str.strip()
@@ -124,6 +122,6 @@ class FertilizantesExtractor(BaseExtractor):
         sem_registro = df["nr_registro_estabelecimento"].isna().sum() if "nr_registro_estabelecimento" in df.columns else "N/A"
         self.log.info(
             f"Transform SIPEAGRO concluído: {len(df)} estabelecimento(s). "
-            f"Sem nú de registro: {sem_registro}."
+            f"Sem número de registro: {sem_registro}."
         )
         return df
