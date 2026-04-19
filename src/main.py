@@ -9,7 +9,8 @@ from pipeline.zarc import ZarcExtractor
 from pipeline.conab import ConabExtractor
 from pipeline.agrofit import AgrofitExtractor
 from pipeline.fertilizantes import FertilizantesExtractor
-from db.manager import init_db, get_db, engine, DimCultura, DimMunicipio, DimMantenedor, FatoProducaoConab, FatoAgrofit, FatoPrecoConabMensal, FatoPrecoConabSemanal, FatoCultivar, FatoProducaoPAM, FatoRiscoZARC, FatoFertilizante
+from pipeline.sigef import SigefExtractor
+from db.manager import init_db, get_db, engine, DimCultura, DimMunicipio, DimMantenedor, FatoProducaoConab, FatoAgrofit, FatoPrecoConabMensal, FatoPrecoConabSemanal, FatoCultivar, FatoProducaoPAM, FatoRiscoZARC, FatoFertilizante, FatoSigefProducao, FatoSigefUsoProprio
 from sqlalchemy.dialects.postgresql import insert
 
 EXTRACTORS = {
@@ -18,7 +19,8 @@ EXTRACTORS = {
     "zarc": ZarcExtractor,
     "conab": ConabExtractor,
     "agrofit": AgrofitExtractor,
-    "fertilizantes": FertilizantesExtractor
+    "fertilizantes": FertilizantesExtractor,
+    "sigef": SigefExtractor
 }
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -273,6 +275,8 @@ def main():
             instances[source] = AgrofitExtractor()
         elif source == "fertilizantes":
             instances[source] = FertilizantesExtractor()
+        elif source == "sigef":
+            instances[source] = SigefExtractor()
 
     # Extração: Processamento paralelo (Threads)
     log.info("Executando extrações em paralelo...")
@@ -295,6 +299,7 @@ def main():
     df_conab = dfs.get("conab", pd.DataFrame())
     df_agrofit = dfs.get("agrofit", pd.DataFrame())
     df_fert = dfs.get("fertilizantes", pd.DataFrame())
+    df_sigef = dfs.get("sigef", pd.DataFrame())
     
     # DML: Carga de tabelas dimensão
     log.info("Carregando Dimensões (Cultura, Mantenedor, Município)...")
@@ -442,6 +447,26 @@ def main():
         
         upsert_data(FatoFertilizante, df_fert_f, index_elements=['nr_registro_estabelecimento'])
         log.info(f"Fato Fertilizantes: Upsert concluído para {len(df_fert_f)} estabelecimentos.")
+ 
+    # Fatos: SIGEF (Produção e Uso Próprio)
+    if isinstance(df_sigef, dict):
+        for key, df in df_sigef.items():
+            if df.empty: continue
+            df_f = df.copy()
+            df_f["id_cultura"] = df_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
+            df_f["id_municipio"] = df_f.apply(
+                lambda x: map_mun_name.get((x["municipio"].lower().strip(), x["uf"].upper())), axis=1
+            )
+            df_f = df_f.dropna(subset=["id_cultura", "id_municipio"])
+ 
+            if key == "campos_producao":
+                index_cols = ['id_cultura', 'id_municipio', 'safra', 'especie', 'cultivar_raw', 'categoria']
+                upsert_data(FatoSigefProducao, df_f, index_elements=index_cols)
+                log.info(f"Fato SIGEF Produção: Upsert concluído para {len(df_f)} registros.")
+            elif key == "uso_proprio":
+                index_cols = ['id_cultura', 'id_municipio', 'periodo', 'especie', 'cultivar_raw']
+                upsert_data(FatoSigefUsoProprio, df_f, index_elements=index_cols)
+                log.info(f"Fato SIGEF Uso Próprio: Upsert concluído para {len(df_f)} registros.")
 
     log.info("--- Pipeline Concluído ---")
 
