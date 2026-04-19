@@ -32,7 +32,6 @@ class AgrofitExtractor(BaseExtractor):
             resp = requests.get(self.DATA_URL, headers=self.HEADERS, timeout=300)
             resp.raise_for_status()
             
-            # Salva no cache
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
             self.cache_path.write_bytes(resp.content)
             self.log.info(f"Download concluído e salvo em: {self.cache_path}")
@@ -58,9 +57,9 @@ class AgrofitExtractor(BaseExtractor):
         if df.empty:
             return df
 
-        self.log.info("Transformando dados do Agrofit...")
-        
-        # Transformação: Mapeamento de colunas
+        self.log.info(f"Transformando Agrofit: {len(df)} linha(s) recebida(s).")
+
+        # Mapeamento de colunas
         renames = {
             "NR_REGISTRO": "nr_registro",
             "MARCA_COMERCIAL": "marca_comercial",
@@ -71,15 +70,21 @@ class AgrofitExtractor(BaseExtractor):
             "CULTURA": "cultura_raw",
             "PRAGA_NOME_COMUM": "praga_comum"
         }
-        
+
         df = df.rename(columns=renames)
-        
-        # Seleção: Filtro de colunas relevantes
+
+        # Filtro de colunas relevantes
         cols = list(renames.values())
         df = df[[c for c in cols if c in df.columns]]
-        
+
         # Normalizar cultura
         if "cultura_raw" in df.columns:
-            df["cultura"] = self.normalize_culture_name(df["cultura_raw"])
-        
+            df["cultura"] = self.normalize_string(df["cultura_raw"])
+            culturas_distintas = df["cultura"].dropna().unique().tolist()
+            self.log.info(
+                f"Agrofit transform concluído: {len(df)} linha(s). "
+                f"{len(culturas_distintas)} cultura(s) distinta(s) mapeada(s): {sorted(culturas_distintas)[:10]}"
+                f"{'...' if len(culturas_distintas) > 10 else ''}."
+            )
+
         return df

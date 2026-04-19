@@ -1,5 +1,6 @@
 import pandas as pd
 import requests
+import os
 from .base_extractor import BaseExtractor
 
 class SidraExtractor(BaseExtractor):
@@ -16,17 +17,21 @@ class SidraExtractor(BaseExtractor):
         "cana-de-açúcar": 39441
     }
 
-    def __init__(self, ano: str = "last"):
+    def __init__(self, ano: str = "last", data_dir: str = "data/sidra", use_cache: bool = True):
         super().__init__()
         self.ano = ano
+        self.data_dir = data_dir
+        self.use_cache = use_cache
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir, exist_ok=True)
 
-    def _get_classification_codes(self) -> dict:
+    def _map_culture_ids(self) -> dict:
         """
         Metadados: Consulta de IDs de categoria no IBGE.
         """
         self.log.info("Buscando metadados da tabela 1612 no IBGE...")
         url = "https://servicodados.ibge.gov.br/api/v3/agregados/1612/metadados"
-        crops_map = {}
+        metadata_map = {}
         try:
             resp = requests.get(url, timeout=15)
             resp.raise_for_status()
@@ -34,29 +39,35 @@ class SidraExtractor(BaseExtractor):
             for cls in data.get("classificacoes", []):
                 if cls["id"] == "81":
                     for cat in cls.get("categorias", []):
-                        name_norm = self.normalize_culture_name(pd.Series([cat["nome"]])).iloc[0]
+                        name_norm = self.normalize_string(pd.Series([cat["nome"]])).iloc[0]
                         # Normalização: Remoção de sufixos (ex: "em grão")
                         name_clean = name_norm.split("(")[0].strip()
-                        crops_map[name_clean] = cat["id"]
+                        metadata_map[name_clean] = cat["id"]
         except Exception as e:
             self.log.warning(f"Falha ao buscar metadados, usando hardcoded. Erro: {e}")
             return self.TARGET_CROPS
         
-        # Filtra pelo TARGET_CROPS
         final_map = {}
         for target in self.TARGET_CROPS.keys():
-            t_norm = self.normalize_culture_name(pd.Series([target])).iloc[0]
-            for clean_name, cid in crops_map.items():
-                if t_norm in clean_name:
-                    final_map[t_norm] = cid
+            target_norm = self.normalize_string(pd.Series([target])).iloc[0]
+            for clean_name, cid in metadata_map.items():
+                if target_norm in clean_name:
+                    final_map[target_norm] = cid
                     break
-            if t_norm not in final_map: # Fallback
-                final_map[t_norm] = self.TARGET_CROPS[target]
+            if target_norm not in final_map: # Fallback
+                final_map[target_norm] = self.TARGET_CROPS[target]
                 
         return final_map
 
     def extract(self) -> pd.DataFrame:
-        crops_ids = self._get_classification_codes()
+        cache_file = os.path.join(self.data_dir, f"pam_sidra_{self.ano}.csv")
+        
+        if self.use_cache and os.path.exists(cache_file):
+            if not self.is_file_stale(cache_file, threshold_days=30):
+                self.log.info(f"Carregando cache SIDRA: {cache_file}")
+                return pd.read_csv(cache_file, dtype=str)
+        
+        crops_ids = self._map_culture_ids()
         all_dfs = []
         
         # Variáveis: 109 (Área Plantada), 216 (Área Colhida), 214 (Produção)
@@ -64,8 +75,6 @@ class SidraExtractor(BaseExtractor):
         
         for crop_name, crop_id in crops_ids.items():
             self.log.info(f"Buscando dados IBGE para {crop_name} (ID: {crop_id})")
-            
-            # Formato APISIDRA: /values/t/1612/n6/all/v/109,216,214/p/last/c81/{crop_id}
             url = f"https://apisidra.ibge.gov.br/values/t/1612/n6/all/v/{variables}/p/{self.ano}/c81/{crop_id}"
             
             try:
@@ -82,15 +91,24 @@ class SidraExtractor(BaseExtractor):
                 self.log.error(f"Exceção ao buscar {crop_name}: {e}")
         
         if not all_dfs:
+            self.log.warning("Extrator SIDRA: nenhum dado retornado para todas as culturas alvo. Verifique conectividade ou IDs de categoria.")
             return pd.DataFrame()
+
+        final_df = pd.concat(all_dfs, ignore_index=True)
+        self.log.info(f"Extrator SIDRA: {len(final_df)} linha(s) brutas consolidadas de {len(all_dfs)} cultura(s).")
+        
+        if self.use_cache:
+            final_df.to_csv(cache_file, index=False)
+            self.log.info(f"Cache salvo: {cache_file}")
             
-        return pd.concat(all_dfs, ignore_index=True)
+        return final_df
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         if df.empty:
             return df
-            
-        # Transformação: Mapeamento de colunas SIDRA
+
+        self.log.info(f"Transformando PAM/SIDRA: {len(df)} linha(s) recebida(s).")
+
         col_map = {
             "D2N": "variavel",
             "V": "valor",
@@ -99,13 +117,20 @@ class SidraExtractor(BaseExtractor):
             "D3N": "ano",
             "cultura_raw": "cultura"
         }
-        
+
+        ausentes = [k for k in col_map if k not in df.columns]
+        if ausentes:
+            self.log.warning(f"PAM/SIDRA: colunas esperadas ausentes no DataFrame bruto: {ausentes}")
+
         df_clean = df.rename(columns=col_map)
-        df_clean = df_clean[list(col_map.values())].copy()
+        df_clean = df_clean[[c for c in col_map.values() if c in df_clean.columns]].copy()
         
-        # Sanitização: Conversão de nulos IBGE ('...', '-') para NaN
         import numpy as np
+        nulos_antes = df_clean["valor"].isna().sum()
         df_clean["valor"] = pd.to_numeric(df_clean["valor"].replace(['...', '-'], np.nan), errors='coerce')
+        nulos_depois = df_clean["valor"].isna().sum()
+        if nulos_depois > nulos_antes:
+            self.log.info(f"PAM/SIDRA: {nulos_depois - nulos_antes} valor(es) não numérico(s) do IBGE ('...', '-') convertido(s) para NaN.")
         
         # Transformação: Pivoteamento de variáveis para colunas fato
         df_pivot = df_clean.pivot_table(
@@ -113,11 +138,10 @@ class SidraExtractor(BaseExtractor):
             columns="variavel",
             values="valor"
         ).reset_index()
+        self.log.info(f"PAM/SIDRA pivot: {len(df_pivot)} combinação(ões) (município × cultura × ano).")
         
-        # Limpar o nome das variáveis para os nomes de colunas usando snake_case
         df_pivot.columns.name = None
         
-        # Transformação: Normalização de nomes de variáveis fato
         var_renames = {
             "Área plantada": "area_plantada_ha",
             "Área colhida": "area_colhida_ha",
@@ -139,7 +163,6 @@ class SidraExtractor(BaseExtractor):
             if target not in df_pivot.columns:
                 df_pivot[target] = np.nan
         
-        # Normaliza a cultura
-        df_pivot["cultura"] = self.normalize_culture_name(df_pivot["cultura"])
+        df_pivot["cultura"] = self.normalize_string(df_pivot["cultura"])
         
         return df_pivot

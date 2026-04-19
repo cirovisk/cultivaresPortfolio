@@ -8,7 +8,10 @@ from pipeline.sidra import SidraExtractor
 from pipeline.zarc import ZarcExtractor
 from pipeline.conab import ConabExtractor
 from pipeline.agrofit import AgrofitExtractor
-from db.manager import init_db, get_db, engine, DimCultura, DimMunicipio, DimMantenedor, FatoProducaoConab, FatoAgrofit, FatoPrecoConabMensal, FatoPrecoConabSemanal, FatoCultivar, FatoProducaoPAM, FatoRiscoZARC
+from pipeline.fertilizantes import FertilizantesExtractor
+from pipeline.sigef import SigefExtractor
+from pipeline.inmet import InmetExtractor
+from db.manager import init_db, get_db, engine, DimCultura, DimMunicipio, DimMantenedor, FatoProducaoConab, FatoAgrofit, FatoPrecoConabMensal, FatoPrecoConabSemanal, FatoCultivar, FatoProducaoPAM, FatoRiscoZARC, FatoFertilizante, FatoSigefProducao, FatoSigefUsoProprio, FatoMeteorologia
 from sqlalchemy.dialects.postgresql import insert
 
 EXTRACTORS = {
@@ -16,77 +19,175 @@ EXTRACTORS = {
     "sidra": SidraExtractor,
     "zarc": ZarcExtractor,
     "conab": ConabExtractor,
-    "agrofit": AgrofitExtractor
+    "agrofit": AgrofitExtractor,
+    "fertilizantes": FertilizantesExtractor,
+    "sigef": SigefExtractor,
+    "inmet": InmetExtractor
 }
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
 def preencher_dimensao_cultura(db, culturas_lista):
+    """DDL: Bulk upsert de culturas alvo na dimensão. Uma transação por carga."""
     culturas_map = {}
+    novos = []
+
     for c in culturas_lista:
         c_norm = c.strip().lower()
         db_cultura = db.query(DimCultura).filter(DimCultura.nome_padronizado == c_norm).first()
         if not db_cultura:
             db_cultura = DimCultura(nome_padronizado=c_norm)
             db.add(db_cultura)
+            novos.append(c_norm)
+        culturas_map[c_norm] = db_cultura  # Guardamos o objeto para refresh pós-commit
+
+    if novos:
+        try:
             db.commit()
-            db.refresh(db_cultura)
-        culturas_map[c_norm] = db_cultura.id_cultura
+            log.info(f"Dim Cultura: {len(novos)} novo(s) registro(s) inserido(s): {novos}")
+        except Exception as e:
+            db.rollback()
+            log.error(f"Dim Cultura: falha no commit bulk — {e}")
+            raise
+    else:
+        log.info("Dim Cultura: nenhum novo registro. Dimensão já atualizada.")
+
+    # Refresh pós-commit para obter os IDs gerados
+    for c_norm, obj in culturas_map.items():
+        db.refresh(obj)
+        culturas_map[c_norm] = obj.id_cultura
+
     return culturas_map
 
+
 def preencher_dimensao_mantenedor(db, df_cult):
+    """DDL: Bulk upsert de mantenedores únicos. Uma transação por carga."""
     mant_map = {}
-    if "mantenedor" not in df_cult.columns: return mant_map
-    
-    unique_mants = df_cult[["mantenedor", "SETOR"]].drop_duplicates().dropna(subset=["mantenedor"])
+    if "mantenedor" not in df_cult.columns:
+        log.warning("Dim Mantenedor: coluna 'mantenedor' ausente no DataFrame de cultivares. Pulando.")
+        return mant_map
+
+    col_setor = "SETOR" if "SETOR" in df_cult.columns else "setor" if "setor" in df_cult.columns else None
+    if col_setor is None:
+        log.warning("Dim Mantenedor: coluna de setor não encontrada. Setor será nulo.")
+
+    cols = ["mantenedor"] + ([col_setor] if col_setor else [])
+    unique_mants = df_cult[cols].drop_duplicates().dropna(subset=["mantenedor"])
+    log.info(f"Dim Mantenedor: {len(unique_mants)} mantenedor(es) único(s) encontrado(s) no DataFrame.")
+
+    novos = []
     for _, row in unique_mants.iterrows():
         nome = row["mantenedor"]
-        setor = row["SETOR"]
+        setor = row[col_setor] if col_setor else None
         db_mant = db.query(DimMantenedor).filter(DimMantenedor.nome == nome).first()
         if not db_mant:
             db_mant = DimMantenedor(nome=nome, setor=setor)
             db.add(db_mant)
+            novos.append(nome)
+        mant_map[nome] = db_mant
+
+    if novos:
+        try:
             db.commit()
-            db.refresh(db_mant)
-        mant_map[nome] = db_mant.id_mantenedor
+            log.info(f"Dim Mantenedor: {len(novos)} novo(s) registro(s) inserido(s).")
+        except Exception as e:
+            db.rollback()
+            log.error(f"Dim Mantenedor: falha no commit bulk — {e}")
+            raise
+    else:
+        log.info("Dim Mantenedor: nenhum novo registro. Dimensão já atualizada.")
+
+    for nome, obj in mant_map.items():
+        db.refresh(obj)
+        mant_map[nome] = obj.id_mantenedor
+
     return mant_map
 
+
 def preencher_dimensao_municipio(db, df_pam, df_zarc):
-    mun_map = {}
-    
-    # Dimensões: Municípios (PAM/IBGE)
-    pam_muns = df_pam[["cod_municipio_ibge", "municipio_nome"]].drop_duplicates().dropna(subset=["cod_municipio_ibge"]) if not df_pam.empty else []
-    
-    for _, row in pam_muns.iterrows() if not df_pam.empty else []:
-        cod = str(row["cod_municipio_ibge"])[:7] # Normalização: ID IBGE (7 dígitos)
-        if not cod: continue
-        db_mun = db.query(DimMunicipio).filter(DimMunicipio.codigo_ibge == cod).first()
-        if not db_mun:
-            db_mun = DimMunicipio(codigo_ibge=cod, nome=row["municipio_nome"])
-            db.add(db_mun)
-            try: db.commit()
-            except: db.rollback()
-            db.refresh(db_mun)
-        mun_map[cod] = db_mun.id_municipio
-        
-    # Dimensões: Municípios (ZARC/MAPA)
-    if not df_zarc.empty and "cod_municipio_ibge" in df_zarc.columns:
-        zarc_muns = df_zarc[["cod_municipio_ibge", "municipio"]].drop_duplicates().dropna(subset=["cod_municipio_ibge"])
-        for _, row in zarc_muns.iterrows():
+    """DDL: Bulk upsert de municípios a partir do PAM e do ZARC. Uma transação por fonte."""
+    mun_map_ibge = {}
+    mun_map_name = {}
+    novos_objetos = []  # Acumula para refresh pós-commit
+
+    # 1. Municípios do PAM/IBGE (Mais precisos, têm Código IBGE)
+    if not df_pam.empty:
+        cols_pam = [c for c in ["cod_municipio_ibge", "municipio_nome", "uf"] if c in df_pam.columns]
+        pam_muns = df_pam[cols_pam].drop_duplicates().dropna(subset=["cod_municipio_ibge"])
+        log.info(f"Dim Município (PAM): processando {len(pam_muns)} município(s) único(s).")
+        novos_pam = 0
+
+        for _, row in pam_muns.iterrows():
             cod = str(row["cod_municipio_ibge"])[:7]
-            if not cod or cod in mun_map: continue
-            
+            uf = str(row["uf"]).strip().upper() if "uf" in row and pd.notna(row["uf"]) else None
             db_mun = db.query(DimMunicipio).filter(DimMunicipio.codigo_ibge == cod).first()
             if not db_mun:
-                db_mun = DimMunicipio(codigo_ibge=cod, nome=row["municipio"])
+                db_mun = DimMunicipio(codigo_ibge=cod, nome=row["municipio_nome"], uf=uf)
                 db.add(db_mun)
-                try: db.commit()
-                except: db.rollback()
-                db.refresh(db_mun)
-            mun_map[cod] = db_mun.id_municipio
-            
-    return mun_map
+                novos_objetos.append((cod, db_mun, row["municipio_nome"].lower().strip(), uf))
+                novos_pam += 1
+            else:
+                mun_map_ibge[cod] = db_mun.id_municipio
+                if uf:
+                    mun_map_name[(row["municipio_nome"].lower().strip(), uf)] = db_mun.id_municipio
+
+        if novos_pam:
+            try:
+                db.commit()
+                log.info(f"Dim Município (PAM): {novos_pam} novo(s) município(s) inserido(s).")
+            except Exception as e:
+                db.rollback()
+                log.error(f"Dim Município (PAM): falha no commit bulk — {e}")
+                raise
+
+        for cod, obj, nome_norm, uf in novos_objetos:
+            db.refresh(obj)
+            mun_map_ibge[cod] = obj.id_municipio
+            if uf:
+                mun_map_name[(nome_norm, uf)] = obj.id_municipio
+        novos_objetos.clear()
+
+    # 2. Municípios do ZARC/MAPA (apenas os que ainda não estão no mapa)
+    if not df_zarc.empty and "cod_municipio_ibge" in df_zarc.columns:
+        cols_zarc = [c for c in ["cod_municipio_ibge", "municipio", "uf"] if c in df_zarc.columns]
+        zarc_muns = df_zarc[cols_zarc].drop_duplicates().dropna(subset=["cod_municipio_ibge"])
+        log.info(f"Dim Município (ZARC): processando {len(zarc_muns)} município(s) único(s).")
+        novos_zarc = 0
+
+        for _, row in zarc_muns.iterrows():
+            cod = str(row["cod_municipio_ibge"])[:7]
+            if cod in mun_map_ibge:
+                continue  # Já carregado via PAM
+            uf = str(row["uf"]).strip().upper() if "uf" in row and pd.notna(row["uf"]) else None
+            db_mun = db.query(DimMunicipio).filter(DimMunicipio.codigo_ibge == cod).first()
+            if not db_mun:
+                db_mun = DimMunicipio(codigo_ibge=cod, nome=row["municipio"], uf=uf)
+                db.add(db_mun)
+                novos_objetos.append((cod, db_mun, row["municipio"].lower().strip(), uf))
+                novos_zarc += 1
+            else:
+                mun_map_ibge[cod] = db_mun.id_municipio
+                if uf:
+                    mun_map_name[(row["municipio"].lower().strip(), uf)] = db_mun.id_municipio
+
+        if novos_zarc:
+            try:
+                db.commit()
+                log.info(f"Dim Município (ZARC): {novos_zarc} novo(s) município(s) inserido(s).")
+            except Exception as e:
+                db.rollback()
+                log.error(f"Dim Município (ZARC): falha no commit bulk — {e}")
+                raise
+
+        for cod, obj, nome_norm, uf in novos_objetos:
+            db.refresh(obj)
+            mun_map_ibge[cod] = obj.id_municipio
+            if uf:
+                mun_map_name[(nome_norm, uf)] = obj.id_municipio
+
+    log.info(f"Dim Município: total de {len(mun_map_ibge)} município(s) mapeado(s) (código IBGE).")
+    return mun_map_ibge, mun_map_name
 
 def clear_facts():
     # DDL: Limpeza de tabelas fato (Safe re-run)
@@ -95,6 +196,53 @@ def clear_facts():
         # Tabelas de preço são mantidas para acumular série histórica (conforme pedido pelo USER).
         conn.execute(text("TRUNCATE TABLE fato_registro_cultivares, fato_producao_pam, fato_risco_zarc, fato_producao_conab, fato_agrofit RESTART IDENTITY CASCADE;"))
         log.info("Tabelas Fato (exceto Preços) truncadas para recarga segura.")
+
+def get_cultura_id(nome_cultura, mapping):
+    if not nome_cultura: return None
+
+    def norm(s):
+        import unicodedata
+        s = str(s).lower().strip()
+        # Remove acentos
+        s = "".join(c for c in unicodedata.normalize('NFKD', s) if unicodedata.category(c) != 'Mn')
+        # Normaliza separadores: hífen e underline viram espaço
+        return s.replace("-", " ").replace("_", " ")
+
+    # Tenta match exato primeiro (antes de normalizar)
+    if nome_cultura in mapping: return mapping[nome_cultura]
+
+    nombre_norm = norm(nome_cultura)
+    for alvo, cid in mapping.items():
+        alvo_norm = norm(alvo)
+        if alvo_norm in nombre_norm or nombre_norm in alvo_norm:
+            return cid
+    return None
+
+def upsert_data(model, df, index_elements):
+    if df.empty: return
+    
+    # Converte DF para dicts
+    records = df.to_dict(orient="records")
+    
+    # Filtra colunas que existem no modelo
+    from sqlalchemy import inspect
+    model_cols = [c.key for c in inspect(model).mapper.column_attrs]
+    valid_records = []
+    for r in records:
+        valid_records.append({k: v for k, v in r.items() if k in model_cols})
+
+    stmt = insert(model).values(valid_records)
+    
+    # Colunas para atualizar em caso de conflito (todas exceto as do índice)
+    update_cols = {c: stmt.excluded[c] for c in model_cols if c not in index_elements and c != 'data_modificacao'}
+    
+    upsert_stmt = stmt.on_conflict_do_update(
+        index_elements=index_elements,
+        set_=update_cols
+    )
+    
+    with engine.begin() as conn:
+        conn.execute(upsert_stmt)
 
 def main():
     parser = argparse.ArgumentParser(description="Pipeline Agro-Dados")
@@ -127,8 +275,13 @@ def main():
             instances[source] = ConabExtractor(force_refresh=args.refresh_conab)
         elif source == "agrofit":
             instances[source] = AgrofitExtractor()
-
-
+        elif source == "fertilizantes":
+            instances[source] = FertilizantesExtractor()
+        elif source == "sigef":
+            instances[source] = SigefExtractor()
+        elif source == "inmet":
+            # Days history default: 2 years (730 days)
+            instances[source] = InmetExtractor(days_history=730)
 
     # Extração: Processamento paralelo (Threads)
     log.info("Executando extrações em paralelo...")
@@ -150,62 +303,17 @@ def main():
     df_zarc = dfs.get("zarc", pd.DataFrame())
     df_conab = dfs.get("conab", pd.DataFrame())
     df_agrofit = dfs.get("agrofit", pd.DataFrame())
-
-
+    df_fert = dfs.get("fertilizantes", pd.DataFrame())
+    df_sigef = dfs.get("sigef", pd.DataFrame())
     
     # DML: Carga de tabelas dimensão
     log.info("Carregando Dimensões (Cultura, Mantenedor, Município)...")
     map_cult = preencher_dimensao_cultura(db, culturas_alvo)
     map_mant = preencher_dimensao_mantenedor(db, df_cult)
-    map_mun = preencher_dimensao_municipio(db, df_pam, df_zarc)
+    map_mun, map_mun_name = preencher_dimensao_municipio(db, df_pam, df_zarc)
     
     # DML: Carga de tabelas fato (FK Lookup)
     log.info("Mapeando Chaves Estrangeiras nas Tabelas Fato...")
-    
-    # Lookup: Resolução de ID por cultura (Flex Search)
-    def get_cultura_id(nome_cultura, mapping):
-        if not nome_cultura: return None
-        
-        def norm(s):
-            import unicodedata
-            s = str(s).lower().strip()
-            return "".join(c for c in unicodedata.normalize('NFKD', s) if unicodedata.category(c) != 'Mn')
-
-        # Tenta match exato primeiro
-        if nome_cultura in mapping: return mapping[nome_cultura]
-        
-        nombre_norm = norm(nome_cultura)
-        for alvo, cid in mapping.items():
-            alvo_norm = norm(alvo)
-            if alvo_norm in nombre_norm or nombre_norm in alvo_norm:
-                return cid
-        return None
-
-    def upsert_data(model, df, index_elements):
-        if df.empty: return
-        
-        # Converte DF para dicts
-        records = df.to_dict(orient="records")
-        
-        # Filtra colunas que existem no modelo
-        from sqlalchemy import inspect
-        model_cols = [c.key for c in inspect(model).mapper.column_attrs]
-        valid_records = []
-        for r in records:
-            valid_records.append({k: v for k, v in r.items() if k in model_cols})
-
-        stmt = insert(model).values(valid_records)
-        
-        # Colunas para atualizar em caso de conflito (todas exceto as do índice)
-        update_cols = {c: stmt.excluded[c] for c in model_cols if c not in index_elements and c != 'data_modificacao'}
-        
-        upsert_stmt = stmt.on_conflict_do_update(
-            index_elements=index_elements,
-            set_=update_cols
-        )
-        
-        with engine.begin() as conn:
-            conn.execute(upsert_stmt)
 
     # Fatos: Registros SNPC (MAPA)
     if not df_cult.empty:
@@ -290,11 +398,15 @@ def main():
 
             elif key in ["precos_uf_semanal", "precos_mun_semanal"]:
                 # Política Semanal: Resetar a cada 4 semanas
-                result = engine.connect().execute(text("SELECT COUNT(DISTINCT semana) FROM fato_precos_conab_semanal"))
-                count_semanas = result.scalar() or 0
+                # Usa context manager para garantir fechamento da conexão
+                with engine.connect() as _conn:
+                    result = _conn.execute(text("SELECT COUNT(DISTINCT semana) FROM fato_precos_conab_semanal"))
+                    count_semanas = result.scalar() or 0
+                log.info(f"Política semanal: {count_semanas} semana(s) acumulada(s) na série.")
                 if count_semanas >= 4:
-                    log.info("Resetando série semanal (política 4 semanas)")
-                    engine.connect().execute(text("TRUNCATE TABLE fato_precos_conab_semanal"))
+                    log.info("Resetando série semanal (política 4 semanas atingida).")
+                    with engine.begin() as _conn:
+                        _conn.execute(text("TRUNCATE TABLE fato_precos_conab_semanal"))
                 
                 cols_s = ["id_cultura", "id_municipio", "uf", "ano", "mes", "semana", "data_referencia", "valor_kg", "nivel_comercializacao"]
                 for c in cols_s:
@@ -325,7 +437,83 @@ def main():
         
         upsert_data(FatoAgrofit, df_agrofit_f, index_elements=['id_cultura', 'nr_registro', 'marca_comercial', 'praga_comum'])
         log.info(f"Fato Agrofit: Upsert concluído para {len(df_agrofit_f)} registros.")
+    
+    # Fatos: Fertilizantes (Estabelecimentos)
+    if not df_fert.empty:
+        df_fert_f = df_fert.copy()
+        
+        # Mapeamento de Município por Nome + UF
+        df_fert_f["id_municipio"] = df_fert_f.apply(
+            lambda x: map_mun_name.get((x["municipio"].lower().strip(), x["uf"].upper())), axis=1
+        )
+        
+        # Filtros e Upsert
+        df_fert_f = df_fert_f.drop_duplicates(subset=["nr_registro_estabelecimento"])
+        
+        upsert_data(FatoFertilizante, df_fert_f, index_elements=['nr_registro_estabelecimento'])
+        log.info(f"Fato Fertilizantes: Upsert concluído para {len(df_fert_f)} estabelecimentos.")
+ 
+    # Fatos: SIGEF (Produção e Uso Próprio)
+    if isinstance(df_sigef, dict):
+        for key, df in df_sigef.items():
+            if df.empty: continue
+            df_f = df.copy()
+            df_f["id_cultura"] = df_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
+            df_f["id_municipio"] = df_f.apply(
+                lambda x: map_mun_name.get((x["municipio"].lower().strip(), x["uf"].upper())), axis=1
+            )
+            df_f = df_f.dropna(subset=["id_cultura", "id_municipio"])
+ 
+            if key == "campos_producao":
+                index_cols = ['id_cultura', 'id_municipio', 'safra', 'especie', 'cultivar_raw', 'categoria']
+                upsert_data(FatoSigefProducao, df_f, index_elements=index_cols)
+                log.info(f"Fato SIGEF Produção: Upsert concluído para {len(df_f)} registros.")
+            elif key == "uso_proprio":
+                index_cols = ['id_cultura', 'id_municipio', 'periodo', 'especie', 'cultivar_raw']
+                upsert_data(FatoSigefUsoProprio, df_f, index_elements=index_cols)
+                log.info(f"Fato SIGEF Uso Próprio: Upsert concluído para {len(df_f)} registros.")
 
+    # Fatos: Meteorologia (INMET)
+    if "inmet" in instances and "inmet" in args.sources:
+        log.info("Processando Fato Meteorologia (Mapeamento de Estações)...")
+        ext_inmet = instances["inmet"]
+        stations_df = ext_inmet.get_stations()
+        
+        all_muns = db.query(DimMunicipio).all()
+        mun_to_station = {}
+        stations_df["name_norm"] = stations_df["DC_NOME"].str.lower().str.strip()
+        
+        for m in all_muns:
+            match = stations_df[(stations_df["name_norm"] == m.nome.lower().strip()) & (stations_df["SG_ESTADO"] == m.uf)]
+            if not match.empty:
+                mun_to_station[m.id_municipio] = match.iloc[0]["CD_ESTACAO"]
+            else:
+                match_p = stations_df[(stations_df["name_norm"].str.contains(m.nome.lower().strip())) & (stations_df["SG_ESTADO"] == m.uf)]
+                if not match_p.empty:
+                    mun_to_station[m.id_municipio] = match_p.iloc[0]["CD_ESTACAO"]
+
+        unique_stations = list(set(mun_to_station.values()))
+        log.info(f"Meteorologia: {len(mun_to_station)} município(s) mapeado(s) para {len(unique_stations)} estação(ões).")
+        
+        if unique_stations:
+            df_meteo = ext_inmet.run(unique_stations)
+            if not df_meteo.empty:
+                station_to_muns = {}
+                for mid, sid in mun_to_station.items():
+                    station_to_muns.setdefault(sid, []).append(mid)
+                
+                rows_to_insert = []
+                for _, row in df_meteo.iterrows():
+                    mids = station_to_muns.get(row["estacao_id"], [])
+                    for mid in mids:
+                        new_row = row.to_dict()
+                        new_row["id_municipio"] = mid
+                        rows_to_insert.append(new_row)
+                
+                df_final_meteo = pd.DataFrame(rows_to_insert)
+                upsert_data(FatoMeteorologia, df_final_meteo, index_elements=['id_municipio', 'data'])
+                log.info(f"Fato Meteorologia: Upsert concluído para {len(df_final_meteo)} registros diários.")
+ 
     log.info("--- Pipeline Concluído ---")
 
 if __name__ == "__main__":

@@ -138,6 +138,72 @@ class FatoPrecoConabSemanal(Base):
 
     __table_args__ = (UniqueConstraint('id_cultura', 'id_municipio', 'uf', 'ano', 'mes', 'semana', 'nivel_comercializacao', name='_conab_preco_semanal_uc'),)
 
+class FatoFertilizante(Base):
+    __tablename__ = "fato_fertilizantes_estabelecimentos"
+    id_fertilizante = Column(Integer, primary_key=True, autoincrement=True)
+    uf = Column(String(2))
+    municipio = Column(String)
+    id_municipio = Column(Integer, ForeignKey("dim_municipio.id_municipio"), nullable=True)
+    nr_registro_estabelecimento = Column(String, unique=True, index=True, nullable=False)
+    status_registro = Column(String)
+    cnpj = Column(String)
+    razao_social = Column(String)
+    nome_fantasia = Column(String)
+    area_atuacao = Column(String)
+    atividade = Column(String)
+    classificacao = Column(String)
+    data_modificacao = Column(DateTime, server_default=func.now(), onupdate=func.now())
+ 
+class FatoSigefProducao(Base):
+    __tablename__ = "fato_sigef_producao"
+    id_sigef_producao = Column(Integer, primary_key=True, autoincrement=True)
+    id_cultura = Column(Integer, ForeignKey("dim_cultura.id_cultura"))
+    id_municipio = Column(Integer, ForeignKey("dim_municipio.id_municipio"))
+    safra = Column(String(20))
+    especie = Column(String)
+    categoria = Column(String)
+    cultivar_raw = Column(String)
+    status = Column(String)
+    data_plantio = Column(DateTime)
+    data_colheita = Column(DateTime)
+    area_ha = Column(Float)
+    producao_bruta_t = Column(Float)
+    producao_est_t = Column(Float)
+    data_modificacao = Column(DateTime, server_default=func.now(), onupdate=func.now())
+ 
+    __table_args__ = (UniqueConstraint('id_cultura', 'id_municipio', 'safra', 'especie', 'cultivar_raw', 'categoria', name='_sigef_prod_uc'),)
+ 
+class FatoSigefUsoProprio(Base):
+    __tablename__ = "fato_sigef_uso_proprio"
+    id_sigef_uso_proprio = Column(Integer, primary_key=True, autoincrement=True)
+    id_cultura = Column(Integer, ForeignKey("dim_cultura.id_cultura"))
+    id_municipio = Column(Integer, ForeignKey("dim_municipio.id_municipio"))
+    tipo_periodo = Column(String)
+    periodo = Column(String)
+    especie = Column(String)
+    cultivar_raw = Column(String)
+    area_total_ha = Column(Float)
+    area_plantada_ha = Column(Float)
+    area_estimada_ha = Column(Float)
+    data_modificacao = Column(DateTime, server_default=func.now(), onupdate=func.now())
+ 
+    __table_args__ = (UniqueConstraint('id_cultura', 'id_municipio', 'periodo', 'especie', 'cultivar_raw', name='_sigef_uso_uc'),)
+ 
+class FatoMeteorologia(Base):
+    __tablename__ = "fato_meteorologia"
+    id_meteo = Column(Integer, primary_key=True, autoincrement=True)
+    id_municipio = Column(Integer, ForeignKey("dim_municipio.id_municipio"))
+    data = Column(DateTime, index=True, nullable=False)
+    precipitacao_total_mm = Column(Float)
+    temp_max_c = Column(Float)
+    temp_min_c = Column(Float)
+    temp_media_c = Column(Float)
+    umidade_media = Column(Float)
+    estacao_id = Column(String(50))
+    data_modificacao = Column(DateTime, server_default=func.now(), onupdate=func.now())
+ 
+    __table_args__ = (UniqueConstraint('id_municipio', 'data', name='_meteo_uc'),)
+
 # Operações: Gerenciamento de Conexão
 
 def init_db():

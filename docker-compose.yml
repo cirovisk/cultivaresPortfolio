@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -27,6 +25,17 @@ services:
       - PYTHONPATH=/app/src
     depends_on:
       - postgres
+
+  test:
+    build: .
+    container_name: cultivares_test
+    volumes:
+      - .:/app
+    environment:
+      - PYTHONPATH=/app/src
+    working_dir: /app
+    command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
+    # Testes unitários usam SQLite in-memory (conftest.py) — não precisam de Postgres
 
 volumes:
   pgdata:

@@ -77,12 +77,14 @@ Para garantir a qualidade dos dados e a integridade do código, execute:
 pytest tests/
 ```
 
-## 🛤️ Roadmap / Futuras Integrações
+## ⚖️ Licença e Uso de Dados
 
-O projeto foi estruturado para facilitar a adição de novas fontes de dados. Algumas integrações planejadas incluem:
-- **Preços de Commodities:** Integração com APIs de cotações (CEPEA/B3).
-- **Dados Meteorológicos:** Histórico de clima em tempo real via OpenWeather ou INMET.
-- **Imagens de Satélite:** Processamento de índices de vegetação (NDVI) via Sentinel/Google Earth Engine.
+Este projeto utiliza bases de dados públicas regidas pela Lei de Acesso à Informação (LAI) e decretos federais de Dados Abertos. Ao utilizar este código para novos fins, respeite as seguintes atribuições:
+
+-   **IBGE (SIDRA/PAM):** Dados públicos sob os [Termos de Uso do IBGE](https://www.ibge.gov.br/institucional/o-ibge/termos-de-uso.html). A citação da fonte é obrigatória.
+-   **CONAB:** Dados sob licença [CC BY-ND 3.0](https://creativecommons.org/licenses/by-nd/3.0/br/). A reprodução é permitida para fins não lucrativos com citação obrigatória da fonte. 
+    > *Nota: Este projeto tem fins estritamente educativos e de portfólio, respeitando a natureza não comercial dos dados da CONAB.*
+-   **MAPA (ZARC, RNC, Agrofit, Fertilizantes):** Dados abertos conforme o [Decreto nº 8.777/2016](http://www.planalto.gov.br/ccivil_03/_ato2015-2018/2016/decreto/d8777.htm) (Política Nacional de Dados Abertos).
 
 ---
 *Este projeto faz parte de um portfólio de engenharia de dados focado em agronegócio.*
