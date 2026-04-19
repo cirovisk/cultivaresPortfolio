@@ -188,6 +188,21 @@ class FatoSigefUsoProprio(Base):
     data_modificacao = Column(DateTime, server_default=func.now(), onupdate=func.now())
  
     __table_args__ = (UniqueConstraint('id_cultura', 'id_municipio', 'periodo', 'especie', 'cultivar_raw', name='_sigef_uso_uc'),)
+ 
+class FatoMeteorologia(Base):
+    __tablename__ = "fato_meteorologia"
+    id_meteo = Column(Integer, primary_key=True, autoincrement=True)
+    id_municipio = Column(Integer, ForeignKey("dim_municipio.id_municipio"))
+    data = Column(DateTime, index=True, nullable=False)
+    precipitacao_total_mm = Column(Float)
+    temp_max_c = Column(Float)
+    temp_min_c = Column(Float)
+    temp_media_c = Column(Float)
+    umidade_media = Column(Float)
+    estacao_id = Column(String(50))
+    data_modificacao = Column(DateTime, server_default=func.now(), onupdate=func.now())
+ 
+    __table_args__ = (UniqueConstraint('id_municipio', 'data', name='_meteo_uc'),)
 
 # Operações: Gerenciamento de Conexão
 

@@ -10,7 +10,8 @@ from pipeline.conab import ConabExtractor
 from pipeline.agrofit import AgrofitExtractor
 from pipeline.fertilizantes import FertilizantesExtractor
 from pipeline.sigef import SigefExtractor
-from db.manager import init_db, get_db, engine, DimCultura, DimMunicipio, DimMantenedor, FatoProducaoConab, FatoAgrofit, FatoPrecoConabMensal, FatoPrecoConabSemanal, FatoCultivar, FatoProducaoPAM, FatoRiscoZARC, FatoFertilizante, FatoSigefProducao, FatoSigefUsoProprio
+from pipeline.inmet import InmetExtractor
+from db.manager import init_db, get_db, engine, DimCultura, DimMunicipio, DimMantenedor, FatoProducaoConab, FatoAgrofit, FatoPrecoConabMensal, FatoPrecoConabSemanal, FatoCultivar, FatoProducaoPAM, FatoRiscoZARC, FatoFertilizante, FatoSigefProducao, FatoSigefUsoProprio, FatoMeteorologia
 from sqlalchemy.dialects.postgresql import insert
 
 EXTRACTORS = {
@@ -20,7 +21,8 @@ EXTRACTORS = {
     "conab": ConabExtractor,
     "agrofit": AgrofitExtractor,
     "fertilizantes": FertilizantesExtractor,
-    "sigef": SigefExtractor
+    "sigef": SigefExtractor,
+    "inmet": InmetExtractor
 }
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -277,6 +279,9 @@ def main():
             instances[source] = FertilizantesExtractor()
         elif source == "sigef":
             instances[source] = SigefExtractor()
+        elif source == "inmet":
+            # Days history default: 2 years (730 days)
+            instances[source] = InmetExtractor(days_history=730)
 
     # Extração: Processamento paralelo (Threads)
     log.info("Executando extrações em paralelo...")
@@ -468,6 +473,47 @@ def main():
                 upsert_data(FatoSigefUsoProprio, df_f, index_elements=index_cols)
                 log.info(f"Fato SIGEF Uso Próprio: Upsert concluído para {len(df_f)} registros.")
 
+    # Fatos: Meteorologia (INMET)
+    if "inmet" in instances and "inmet" in args.sources:
+        log.info("Processando Fato Meteorologia (Mapeamento de Estações)...")
+        ext_inmet = instances["inmet"]
+        stations_df = ext_inmet.get_stations()
+        
+        all_muns = db.query(DimMunicipio).all()
+        mun_to_station = {}
+        stations_df["name_norm"] = stations_df["DC_NOME"].str.lower().str.strip()
+        
+        for m in all_muns:
+            match = stations_df[(stations_df["name_norm"] == m.nome.lower().strip()) & (stations_df["SG_ESTADO"] == m.uf)]
+            if not match.empty:
+                mun_to_station[m.id_municipio] = match.iloc[0]["CD_ESTACAO"]
+            else:
+                match_p = stations_df[(stations_df["name_norm"].str.contains(m.nome.lower().strip())) & (stations_df["SG_ESTADO"] == m.uf)]
+                if not match_p.empty:
+                    mun_to_station[m.id_municipio] = match_p.iloc[0]["CD_ESTACAO"]
+
+        unique_stations = list(set(mun_to_station.values()))
+        log.info(f"Meteorologia: {len(mun_to_station)} município(s) mapeado(s) para {len(unique_stations)} estação(ões).")
+        
+        if unique_stations:
+            df_meteo = ext_inmet.run(unique_stations)
+            if not df_meteo.empty:
+                station_to_muns = {}
+                for mid, sid in mun_to_station.items():
+                    station_to_muns.setdefault(sid, []).append(mid)
+                
+                rows_to_insert = []
+                for _, row in df_meteo.iterrows():
+                    mids = station_to_muns.get(row["estacao_id"], [])
+                    for mid in mids:
+                        new_row = row.to_dict()
+                        new_row["id_municipio"] = mid
+                        rows_to_insert.append(new_row)
+                
+                df_final_meteo = pd.DataFrame(rows_to_insert)
+                upsert_data(FatoMeteorologia, df_final_meteo, index_elements=['id_municipio', 'data'])
+                log.info(f"Fato Meteorologia: Upsert concluído para {len(df_final_meteo)} registros diários.")
+ 
     log.info("--- Pipeline Concluído ---")
 
 if __name__ == "__main__":
