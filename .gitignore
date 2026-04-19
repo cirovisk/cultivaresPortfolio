@@ -15,6 +15,7 @@ data/
 scratch*.py
 out.log
 *.log
+logs/
 
 # Pastas de Notebooks e Ferramentas
 notebooks/
