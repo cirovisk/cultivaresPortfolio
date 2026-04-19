@@ -269,7 +269,10 @@ def load_fact_meteorologia(db, df, extractor, all_muns):
     unique_stations = list(set(mun_to_station.values()))
     if not unique_stations: return
     
-    df_meteo = extractor.run(unique_stations)
+    raw_data = extractor.extract(unique_stations)
+    from pipeline.cleaners.inmet import clean_inmet
+    df_meteo = clean_inmet(raw_data)
+    
     if df_meteo.empty: return
     
     station_to_muns = {}

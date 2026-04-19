@@ -69,19 +69,53 @@ def main():
         elif source == "inmet":
             instances[source] = InmetExtractor(days_history=730)
 
-    # Extração: Processamento paralelo
-    log.info("Executando extrações em paralelo...")
+    # Extração e Limpeza: Processamento paralelo Funcional
+    log.info("Executando extrações e limpezas em cadeia paralela...")
     dfs = {}
+    
+    from pipeline.cleaners.conab import clean_conab
+    from pipeline.cleaners.sigef import clean_sigef
+    from pipeline.cleaners.cultivares import clean_cultivares
+    from pipeline.cleaners.sidra import clean_sidra
+    from pipeline.cleaners.zarc import clean_zarc
+    from pipeline.cleaners.agrofit import clean_agrofit
+    from pipeline.cleaners.fertilizantes import clean_fertilizantes
+    from pipeline.cleaners.inmet import clean_inmet
+
+    CLEANERS = {
+        "cultivares": clean_cultivares,
+        "sidra": clean_sidra,
+        "zarc": clean_zarc,
+        "conab": clean_conab,
+        "agrofit": clean_agrofit,
+        "fertilizantes": clean_fertilizantes,
+        "sigef": clean_sigef,
+        "inmet": clean_inmet
+    }
+
+    def pipeline_task(source_name, ext_instance):
+        if source_name == "inmet":
+            return pd.DataFrame()
+            
+        raw_data = ext_instance.extract()
+        cleaner_func = CLEANERS.get(source_name)
+        if cleaner_func:
+            return cleaner_func(raw_data)
+        return raw_data
+
     if instances:
         with concurrent.futures.ThreadPoolExecutor(max_workers=len(instances)) as executor:
-            future_to_source = {executor.submit(ext.run): source for source, ext in instances.items()}
+            future_to_source = {
+                executor.submit(pipeline_task, source, ext): source 
+                for source, ext in instances.items()
+            }
             for future in concurrent.futures.as_completed(future_to_source):
                 source = future_to_source[future]
                 try:
                     dfs[source] = future.result()
-                    log.info(f"Extração {source} finalizada.")
+                    log.info(f"Pipeline Módulo [{source}] finalizado com sucesso.")
                 except Exception as exc:
-                    log.error(f"Extrator {source} gerou erro: {exc}")
+                    log.error(f"Pipeline Módulo [{source}] gerou erro (I/O ou Limpeza): {exc}")
                     dfs[source] = pd.DataFrame()
 
     # DML: Carga de dimensões

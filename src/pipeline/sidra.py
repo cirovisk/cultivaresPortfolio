@@ -2,6 +2,7 @@ import pandas as pd
 import requests
 import os
 from .base_extractor import BaseExtractor
+from .cleaners.utils import normalize_string
 
 class SidraExtractor(BaseExtractor):
     """
@@ -39,7 +40,7 @@ class SidraExtractor(BaseExtractor):
             for cls in data.get("classificacoes", []):
                 if cls["id"] == "81":
                     for cat in cls.get("categorias", []):
-                        name_norm = self.normalize_string(pd.Series([cat["nome"]])).iloc[0]
+                        name_norm = normalize_string(pd.Series([cat["nome"]])).iloc[0]
                         # Normalização: Remoção de sufixos (ex: "em grão")
                         name_clean = name_norm.split("(")[0].strip()
                         metadata_map[name_clean] = cat["id"]
@@ -49,7 +50,7 @@ class SidraExtractor(BaseExtractor):
         
         final_map = {}
         for target in self.TARGET_CROPS.keys():
-            target_norm = self.normalize_string(pd.Series([target])).iloc[0]
+            target_norm = normalize_string(pd.Series([target])).iloc[0]
             for clean_name, cid in metadata_map.items():
                 if target_norm in clean_name:
                     final_map[target_norm] = cid
@@ -102,67 +103,3 @@ class SidraExtractor(BaseExtractor):
             self.log.info(f"Cache salvo: {cache_file}")
             
         return final_df
-
-    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
-        if df.empty:
-            return df
-
-        self.log.info(f"Transformando PAM/SIDRA: {len(df)} linha(s) recebida(s).")
-
-        col_map = {
-            "D2N": "variavel",
-            "V": "valor",
-            "D1C": "cod_municipio_ibge",
-            "D1N": "municipio_nome",
-            "D3N": "ano",
-            "cultura_raw": "cultura"
-        }
-
-        ausentes = [k for k in col_map if k not in df.columns]
-        if ausentes:
-            self.log.warning(f"PAM/SIDRA: colunas esperadas ausentes no DataFrame bruto: {ausentes}")
-
-        df_clean = df.rename(columns=col_map)
-        df_clean = df_clean[[c for c in col_map.values() if c in df_clean.columns]].copy()
-        
-        import numpy as np
-        nulos_antes = df_clean["valor"].isna().sum()
-        df_clean["valor"] = pd.to_numeric(df_clean["valor"].replace(['...', '-'], np.nan), errors='coerce')
-        nulos_depois = df_clean["valor"].isna().sum()
-        if nulos_depois > nulos_antes:
-            self.log.info(f"PAM/SIDRA: {nulos_depois - nulos_antes} valor(es) não numérico(s) do IBGE ('...', '-') convertido(s) para NaN.")
-        
-        # Transformação: Pivoteamento de variáveis para colunas fato
-        df_pivot = df_clean.pivot_table(
-            index=["cod_municipio_ibge", "municipio_nome", "ano", "cultura"],
-            columns="variavel",
-            values="valor"
-        ).reset_index()
-        self.log.info(f"PAM/SIDRA pivot: {len(df_pivot)} combinação(ões) (município × cultura × ano).")
-        
-        df_pivot.columns.name = None
-        
-        var_renames = {
-            "Área plantada": "area_plantada_ha",
-            "Área colhida": "area_colhida_ha",
-            "Quantidade produzida": "qtde_produzida_ton",
-            "Valor da produção": "valor_producao_mil_reais"
-        }
-        
-        # Encontra colunas que realmente existem e contêm os termos chave
-        actual_renames = {}
-        for col in df_pivot.columns:
-            for key, target in var_renames.items():
-                if key in col:
-                    actual_renames[col] = target
-        
-        df_pivot = df_pivot.rename(columns=actual_renames)
-        
-        # Garante que as colunas finais existam (reindex)
-        for target in var_renames.values():
-            if target not in df_pivot.columns:
-                df_pivot[target] = np.nan
-        
-        df_pivot["cultura"] = self.normalize_string(df_pivot["cultura"])
-        
-        return df_pivot

@@ -52,39 +52,3 @@ class AgrofitExtractor(BaseExtractor):
             on_bad_lines='skip',
             low_memory=False
         )
-
-    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
-        if df.empty:
-            return df
-
-        self.log.info(f"Transformando Agrofit: {len(df)} linha(s) recebida(s).")
-
-        # Mapeamento de colunas
-        renames = {
-            "NR_REGISTRO": "nr_registro",
-            "MARCA_COMERCIAL": "marca_comercial",
-            "INGREDIENTE_ATIVO": "ingrediente_ativo",
-            "TITULAR_DE_REGISTRO": "titular_registro",
-            "CLASSE": "classe",
-            "SITUACAO": "situacao",
-            "CULTURA": "cultura_raw",
-            "PRAGA_NOME_COMUM": "praga_comum"
-        }
-
-        df = df.rename(columns=renames)
-
-        # Filtro de colunas relevantes
-        cols = list(renames.values())
-        df = df[[c for c in cols if c in df.columns]]
-
-        # Normalizar cultura
-        if "cultura_raw" in df.columns:
-            df["cultura"] = self.normalize_string(df["cultura_raw"])
-            culturas_distintas = df["cultura"].dropna().unique().tolist()
-            self.log.info(
-                f"Agrofit transform concluído: {len(df)} linha(s). "
-                f"{len(culturas_distintas)} cultura(s) distinta(s) mapeada(s): {sorted(culturas_distintas)[:10]}"
-                f"{'...' if len(culturas_distintas) > 10 else ''}."
-            )
-
-        return df

@@ -9,6 +9,9 @@
     - Criar consultas pré-processadas que unam Clima e Produção (padrão "Híbrido RESTful").
 - [ ] **Organização de Schemas Lógicos:**
     - Avaliar a separação das tabelas por schemas do PostgreSQL (ex: `raw_data`, `analytics`) para reduzir o aspecto monolítico.
+- [ ] **Segurança de Acesso da API:**
+    - Criar `Role` Read-Only (Apenas SELECT) no PostgreSQL (`api_reader`).
+    - Configurar FastAPI para usar esse usuário protegido para ler os schemas.
 
 ## ⚙️ Infraestrutura e Operações
 - [ ] **Configurar Agendamento (Crontab):**

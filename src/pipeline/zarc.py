@@ -28,7 +28,7 @@ class ZarcExtractor(BaseExtractor):
             # Smart Refresh Logic
             if self.use_cache and cache_file.exists() and not self.is_file_stale(str(cache_file), 30):
                 self.log.info(f"Usando cache ZARC para {crop}...")
-                all_dfs.append(pd.read_csv(cache_file, sep=';', encoding='utf-8', on_bad_lines='skip'))
+                all_dfs.append(pd.read_csv(cache_file, sep=';', encoding='utf-8', on_bad_lines='skip', compression='gzip'))
                 continue
 
             self.log.info(f"Buscando recurso ZARC no CKAN para: {crop}")
@@ -66,34 +66,9 @@ class ZarcExtractor(BaseExtractor):
             except Exception as e:
                 self.log.error(f"Erro ao buscar ZARC para {crop}: {e}")
                 if cache_file.exists():
-                    all_dfs.append(pd.read_csv(cache_file, sep=';', encoding='utf-8'))
+                    all_dfs.append(pd.read_csv(cache_file, sep=';', encoding='utf-8', compression='gzip'))
 
         if not all_dfs:
             return pd.DataFrame()
             
         return pd.concat(all_dfs, ignore_index=True)
-
-    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
-        if df.empty:
-            return df
-            
-        df_clean = df.copy()
-        
-        df_clean.columns = (
-            df_clean.columns.str.lower()
-            .str.replace(" ", "_")
-            .str.replace("-", "_")
-            .str.normalize('NFKD')
-            .str.encode('ascii', errors='ignore')
-            .str.decode('utf-8')
-        )
-        
-        ibge_cols = [c for c in df_clean.columns if "ibge" in c or "cd_mun" in c or "codigo_mun" in c]
-        if ibge_cols:
-            df_clean = df_clean.rename(columns={ibge_cols[0]: "cod_municipio_ibge"})
-        
-        if "cultura_raw" in df_clean.columns:
-            df_clean["cultura"] = self.normalize_string(df_clean["cultura_raw"])
-            df_clean = df_clean.drop(columns=["cultura_raw"])
-            
-        return df_clean
