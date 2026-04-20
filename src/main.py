@@ -32,6 +32,7 @@ EXTRACTORS = {
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
+
 def main():
     parser = argparse.ArgumentParser(description="Pipeline Agro-Dados")
     parser.add_argument("--sources", nargs="+", choices=EXTRACTORS.keys(), default=list(EXTRACTORS.keys()), help="Fontes de dados a serem extraídas")
@@ -42,6 +43,7 @@ def main():
     log.info(f"Fontes selecionadas: {args.sources}")
     init_db()
     db = next(get_db())
+
     
     culturas_alvo = ["soja", "milho", "trigo", "algodão", "cana-de-açúcar"]
     
