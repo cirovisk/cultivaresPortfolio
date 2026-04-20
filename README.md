@@ -41,12 +41,13 @@ O projeto segue uma arquitetura modular baseada em um modelo Estrela (Star Schem
 
 ```text
 .
-├── data/               # Dados brutos e persistência local (cache)
-├── docs/               # Documentação técnica e schemas
-├── src/
+├── docker/                 # Configurações Docker
+│   └── app.Dockerfile      # Imagem única para ETL, API e Testes
+├── docs/                   # Documentação técnica e schemas
+├── src/                    # Código-fonte (Python root via PYTHONPATH)
 │   ├── api/           # Camada de API (Endpoints, Routers, Schemas)
 │   ├── db/            # Modelagem Star Schema (SQLAlchemy)
-│   ├── pipeline/      # Orchestação e Extractors
+│   ├── pipeline/      # Extractors e Cleaners
 │   │   └── cleaners/  # Lógica de limpeza desacoplada (Funcional)
 │   └── main.py        # Orquestrador do pipeline de dados
 ├── tests/              # Suite de testes (Unitários e Integração API)

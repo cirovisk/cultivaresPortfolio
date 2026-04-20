@@ -13,7 +13,9 @@ services:
     restart: unless-stopped
 
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
     container_name: cultivares_app
     volumes:
       - .:/app
@@ -27,7 +29,9 @@ services:
       - postgres
 
   test:
-    build: .
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
     container_name: cultivares_test
     volumes:
       - .:/app
@@ -38,7 +42,9 @@ services:
     # Testes unitários usam SQLite in-memory (conftest.py) — não precisam de Postgres
 
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
     container_name: cultivares_api
     volumes:
       - .:/app
