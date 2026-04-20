@@ -120,3 +120,17 @@ def mock_agrofit_raw():
         "PRAGA_NOME_COMUM": ["Galinha", "Lagarta"]
     }
     return pd.DataFrame(data)
+
+@pytest.fixture(autouse=True)
+def override_get_db(db_session):
+    """Sobrescreve a dependência get_db do FastAPI para usar a sessão de teste (SQLite)."""
+    # Import tardio para evitar conflitos de importação circular
+    from api.main import app
+    from src.db.manager import get_db
+    
+    def _get_db_override():
+        yield db_session
+    
+    app.dependency_overrides[get_db] = _get_db_override
+    yield
+    app.dependency_overrides.clear()
