@@ -41,7 +41,7 @@ jobs:
         pip install -r requirements.txt
 
     - name: Run tests
+      env:
+        USE_SQLITE: "true"
       run: |
-        # Forçamos o uso do SQLite para os testes de unidade e integração
-        export USE_SQLITE=true
         pytest tests/ -v
