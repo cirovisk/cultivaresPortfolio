@@ -10,6 +10,21 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cultivares_user
+          POSTGRES_PASSWORD: cultivares_password
+          POSTGRES_DB: cultivares_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
     - name: Check out repository
       uses: actions/checkout@v4
@@ -27,7 +42,6 @@ jobs:
 
     - name: Run tests
       run: |
-        # Definimos uma variável faker para evitar que o psycopg2 tente conectar no Postgres real durante a importação do manager
-        export POSTGRES_DB=test
-        export POSTGRES_USER=test
+        # Forçamos o uso do SQLite para os testes de unidade e integração
+        export USE_SQLITE=true
         pytest tests/ -v
