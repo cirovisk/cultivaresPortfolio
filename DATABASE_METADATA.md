@@ -4,7 +4,7 @@ Este documento descreve a estrutura do banco de Dados PostgreSQL utilizado no pr
 
 ## 🏗️ Arquitetura de Dados
 
-O banco de dados é composto por 3 tabelas de Dimensão e 7 tabelas de Fato, permitindo análises granulares por cultura, município e tempo.
+O banco de dados é composto por 3 tabelas de Dimensão e 11 tabelas de Fato, permitindo análises granulares por cultura, município e tempo.
 
 ---
 
@@ -117,6 +117,46 @@ Cadastro de estabelecimentos produtores, importadores e comerciantes de fertiliz
 - `area_atuacao`: Área (ex: FERTILIZANTE, INOCULANTE).
 - `atividade`: Atividade (ex: PRODUTOR, IMPORTADOR).
 - `classificacao`: Detalhamento da classificação do estabelecimento.
+ 
+### `fato_sigef_producao` (Fonte: MAPA/SIGEF)
+Controle da produção comercial de sementes e mudas.
+- `id_sigef_producao` (PK): Identificador único.
+- `id_cultura` (FK): Chave para `dim_cultura`.
+- `id_municipio` (FK): Chave para `dim_municipio`.
+- `safra`: Ciclo de produção (ex: 2023/2023).
+- `especie`: Nome da espécie original.
+- `cultivar_raw`: Nome da cultivar original.
+- `categoria`: Categoria da semente (C1, C2, S1, S2, etc).
+- `status`: Situação do campo de produção.
+- `data_plantio`: Data de plantio do campo.
+- `data_colheita`: Data de colheita.
+- `area_ha`: Área do campo em hectares.
+- `producao_bruta_t`: Volume colhido bruto (ton).
+- `producao_est_t`: Estimativa de produção (ton).
+ 
+### `fato_sigef_uso_proprio` (Fonte: MAPA/SIGEF)
+Declarações de reserva de sementes para uso próprio do produtor.
+- `id_sigef_uso_proprio` (PK): Identificador único.
+- `id_cultura` (FK): Chave para `dim_cultura`.
+- `id_municipio` (FK): Chave para `dim_municipio`.
+- `periodo`: Ano/Safra da declaração.
+- `tipo_periodo`: Granularidade do período (ex: ANO).
+- `cultivar_raw`: Cultivar reservada.
+- `area_total_ha`: Área total declarada.
+- `area_plantada_ha`: Área efetivamente plantada.
+- `area_estimada_ha`: Área estimada de produção.
+ 
+### `fato_meteorologia` (Fonte: INMET)
+Dados meteorológicos diários agregados por município.
+- `id_meteo` (PK): Identificador único.
+- `id_municipio` (FK): Chave para `dim_municipio`.
+- `data`: Data de referência.
+- `precipitacao_total_mm`: Chuva acumulada no dia.
+- `temp_max_c`: Temperatura máxima atingida.
+- `temp_min_c`: Temperatura mínima atingida.
+- `temp_media_c`: Temperatura média aritmética do dia.
+- `umidade_media`: Umidade relativa média (%).
+- `estacao_id`: Código da estação INMET de origem.
 
 ---
 

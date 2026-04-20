@@ -50,7 +50,7 @@ class ConabExtractor(BaseExtractor):
                     df = pd.read_csv(
                         local_path,
                         sep=";",
-                        encoding="utf-8",
+                        encoding="latin1",
                         dtype=str,
                         skipinitialspace=True
                     )
@@ -82,90 +82,3 @@ class ConabExtractor(BaseExtractor):
             self.log.info(f"Download concluído: {filename}")
         except Exception as e:
             self.log.error(f"Erro no download de {url}: {e}")
-
-    def transform(self, dataframes: dict) -> dict:
-        """
-        Transformação polimórfica baseada na chave do dataset.
-        """
-        self.log.info(f"Iniciando transformação CONAB: {list(dataframes.keys())} dataset(s) recebidos.")
-        processed = {}
-        
-        # 1. Produção
-        for key in ["producao_historica", "producao_estimativa"]:
-            if key in dataframes:
-                processed[key] = self._transform_producao(dataframes[key])
-        
-        # 2. Preços Mensais
-        for key in ["precos_uf_mensal", "precos_mun_mensal"]:
-            if key in dataframes:
-                processed[key] = self._transform_precos(dataframes[key], freq="mensal")
-
-        # 3. Preços Semanais
-        for key in ["precos_uf_semanal", "precos_mun_semanal"]:
-            if key in dataframes:
-                processed[key] = self._transform_precos(dataframes[key], freq="semanal")
-
-        return processed
-
-    def _transform_producao(self, df):
-        self.log.info(f"CONAB Produção: {len(df)} linha(s) brutas recebidas.")
-        df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
-        renames = {
-            "ano_agricola": "ano_agricola",
-            "dsc_safra_previsao": "safra",
-            "uf": "uf",
-            "produto": "produto_raw",
-            "area_plantada_mil_ha": "area_plantada_mil_ha",
-            "producao_mil_t": "producao_mil_t",
-            "produtividade_mil_ha_mil_t": "produtividade_t_ha"
-        }
-        df = df.rename(columns=renames)
-        cols_num = ["area_plantada_mil_ha", "producao_mil_t", "produtividade_t_ha"]
-        for col in cols_num:
-            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
-        
-        df["cultura"] = self.normalize_string(df["produto_raw"])
-        cols_final = ["ano_agricola", "safra", "uf", "cultura", "area_plantada_mil_ha", "producao_mil_t", "produtividade_t_ha"]
-        df_out = df[cols_final]
-        self.log.info(f"CONAB Produção: {len(df_out)} linha(s) após normalização. Culturas: {sorted(df_out['cultura'].dropna().unique().tolist())}.")
-        return df_out
-
-    def _transform_precos(self, df, freq="mensal"):
-        self.log.info(f"CONAB Preços ({freq}): {len(df)} linha(s) brutas recebidas.")
-        df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
-        renames = {
-            "produto": "produto_raw",
-            "uf": "uf",
-            "nom_municipio": "municipio",
-            "cod_ibge": "cod_municipio_ibge",
-            "ano": "ano",
-            "mes": "mes",
-            "valor_produto_kg": "valor_kg",
-            "dsc_nivel_comercializacao": "nivel_comercializacao",
-            "semana": "semana",
-            "data_inicial_final_semana": "data_referencia"
-        }
-        df = df.rename(columns=renames)
-        
-        # Casting e Limpeza
-        df["valor_kg"] = pd.to_numeric(df["valor_kg"].str.replace(",", "."), errors="coerce").fillna(0.0)
-        df["ano"] = pd.to_numeric(df["ano"], errors="coerce").fillna(0).astype(int)
-        df["mes"] = pd.to_numeric(df["mes"], errors="coerce").fillna(0).astype(int)
-        df["cultura"] = self.normalize_string(df["produto_raw"])
-        
-        cols = ["cultura", "uf", "ano", "mes", "valor_kg", "nivel_comercializacao"]
-        if "cod_municipio_ibge" in df.columns:
-            cols.append("cod_municipio_ibge")
-            df["cod_municipio_ibge"] = df["cod_municipio_ibge"].str.strip()
-            
-        if freq == "semanal":
-            cols.extend(["semana", "data_referencia"])
-            df["semana"] = pd.to_numeric(df["semana"], errors="coerce").fillna(0).astype(int)
-        
-        return df[cols]
-
-    def run(self) -> dict:
-        """Override do BaseExtractor para suportar retorno múltiplo."""
-        self.log.info("Iniciando extração e transformação CONAB...")
-        data = self.extract()
-        return self.transform(data)

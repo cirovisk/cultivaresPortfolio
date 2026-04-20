@@ -11,8 +11,13 @@ O objetivo principal é criar um ambiente unificado para análise de dados agro,
 O pipeline extrai e processa dados das seguintes fontes:
 
 1.  **MAPA/SNPC (CultivarWeb):** Dados sobre cultivares registradas e protegidas no Brasil.
-2.  **IBGE/SIDRA (PAM):** Produção Agrícola Municipal, contemplando área plantada, colhida, quantidade produzida e valor da produção.
-3.  **MAPA/ZARC:** Zoneamento de Agrícola de Risco Climático, indicando períodos de plantio com menores riscos por município e cultura.
+2.  **IBGE/SIDRA (PAM):** Produção Agrícola Municipal (área, quantidade, valor).
+3.  **MAPA/ZARC:** Zoneamento de Risco Climático por município.
+4.  **CONAB:** Séries históricas de produção e indicadores de preços.
+5.  **MAPA/Agrofit:** Sistema de agrotóxicos fitossanitários.
+6.  **MAPA/SIPEAGRO:** Dados de estabelecimentos de fertilizantes.
+7.  **MAPA/SIGEF (Sementes):** Controle da produção de sementes e mudas.
+8.  **INMET:** Rede de estações meteorológicas (dados diários).
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -28,7 +33,7 @@ O pipeline extrai e processa dados das seguintes fontes:
 O projeto segue uma arquitetura modular baseada em um modelo Estrela (Star Schema):
 
 -   **Dimensões:** Cultura, Município, Mantenedor.
--   **Fatos:** Cadastro de Cultivares, Produção PAM, Risco ZARC.
+-   **Fatos:** Cadastro de Cultivares, Produção PAM, Risco ZARC, Produção/Preços CONAB, Agrofit, Fertilizantes, SIGEF e Meteorologia INMET.
 
 ### Estrutura de Diretórios
 
@@ -52,29 +57,21 @@ O projeto segue uma arquitetura modular baseada em um modelo Estrela (Star Schem
 
 ### Passo a Passo
 
-1.  **Subir o ambiente (Banco de Dados):**
+1.  **Subir o ambiente e Executar o Pipeline:**
     ```bash
-    docker-compose up -d
+    docker-compose run --rm app
+    ```
+    *Este comando inicializa o banco de dados PostgreSQL e executa o processo de extração completo.*
+
+2.  **Executar Testes (Docker):**
+    ```bash
+    docker-compose run --rm test
     ```
 
-2.  **Configurar o ambiente virtual (opcional/local):**
-    ```bash
-    python -m venv .venv
-    source .venv/bin/activate
-    pip install -r requirements.txt
-    ```
-
-3.  **Executar o pipeline:**
-    ```bash
-    python src/main.py
-    ```
-
-## 🧪 Testes
-
-Para garantir a qualidade dos dados e a integridade do código, execute:
+Para garantir a qualidade dos dados e a integridade do código, utilize o serviço de teste do Docker Compose:
 
 ```bash
-pytest tests/
+docker-compose run --rm test
 ```
 
 ## ⚖️ Licença e Uso de Dados
@@ -83,8 +80,8 @@ Este projeto utiliza bases de dados públicas regidas pela Lei de Acesso à Info
 
 -   **IBGE (SIDRA/PAM):** Dados públicos sob os [Termos de Uso do IBGE](https://www.ibge.gov.br/institucional/o-ibge/termos-de-uso.html). A citação da fonte é obrigatória.
 -   **CONAB:** Dados sob licença [CC BY-ND 3.0](https://creativecommons.org/licenses/by-nd/3.0/br/). A reprodução é permitida para fins não lucrativos com citação obrigatória da fonte. 
-    > *Nota: Este projeto tem fins estritamente educativos e de portfólio, respeitando a natureza não comercial dos dados da CONAB.*
--   **MAPA (ZARC, RNC, Agrofit, Fertilizantes):** Dados abertos conforme o [Decreto nº 8.777/2016](http://www.planalto.gov.br/ccivil_03/_ato2015-2018/2016/decreto/d8777.htm) (Política Nacional de Dados Abertos).
+-   **MAPA (ZARC, RNC, Agrofit, Fertilizantes, SIGEF):** Dados abertos conforme o [Decreto nº 8.777/2016](http://www.planalto.gov.br/ccivil_03/_ato2015-2018/2016/decreto/d8777.htm).
+-   **INMET:** Dados públicos regidos pela LAI. A citação da fonte (**Instituto Nacional de Meteorologia - INMET**) é obrigatória conforme normas técnicas.
 
 ---
 *Este projeto faz parte de um portfólio de engenharia de dados focado em agronegócio.*
