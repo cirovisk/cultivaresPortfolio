@@ -10,10 +10,11 @@ Extração do cadastro de estabelecimentos que comercializam ou produzem fertili
 1.  **Download CSV:** Download direto via HTTP.
 2.  **Versioning:** O script mantém uma pasta `archive` para guardar versões anteriores do dataset antes de atualizar, garantindo a idempotência e histórico de mudanças nos estabelecimentos.
 
-## 🔄 Transformações (Silver Layer)
-- **Limpeza de CNPJ:** Padronização numérica para joins futuros.
-- **Tratamento de Encoding:** O arquivo original usa `latin1`, o pipeline converte para `utf-8` durante o processamento.
-- **Normalização Geográfica:** Vinculação dos nomes de municípios com a `dim_municipio`.
+## 🔄 Transformações (Cleaners)
+Implementado em `src/pipeline/cleaners/fertilizantes.py`:
+- **Limpeza de CNPJ:** Padronização numérica.
+- **Tratamento de Encoding:** Conversão de `latin1` para `utf-8`.
+- **Match de Município:** Join dinâmico com `dim_municipio`.
 
 ## 💾 Armazenamento
 Os dados alimentam a tabela `fato_fertilizantes_estabelecimentos`, fornecendo uma visão clara da infraestrutura de insumos disponível em cada microrregião produtiva.

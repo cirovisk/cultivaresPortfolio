@@ -16,8 +16,9 @@ Esta pasta contém o detalhamento técnico de cada pipeline de extração e tran
 ---
 
 ## 🏗️ Padrão de Engenharia
+ 
+ O projeto utiliza uma arquitetura de pipeline desacoplada:
 
-Todos os extratores herdam da classe abstrata `BaseExtractor` (`src/pipeline/base_extractor.py`), garantindo:
-1.  **Logs Padronizados:** Uso de logging estruturado para monitoramento.
-2.  **Tratamento de Cache:** Verificação de arquivos locais antes de downloads pesados.
-3.  **Normalização Centralizada:** Uso do método `normalize_culture_name` para evitar discrepâncias entre nomes de culturas (ex: transformando "Soja (em grão)" e "SOJA" em um identificador único).
+1.  **Extractors (`src/pipeline/`):** Classes que gerenciam a conexão com a fonte, o download dos dados e a persistência em cache. Não contêm lógica de negócio complexa.
+2.  **Cleaners (`src/pipeline/cleaners/`):** Funções puras (sem estado) que recebem dados brutos (JSON/CSV) e devolvem DataFrames normalizados. Este desacoplamento permite testar a limpeza de dados sem precisar de internet ou banco de dados.
+3.  **Normalização Centralizada:** Uso do método `normalize_culture_name` (`src/pipeline/utils.py`) para unificar as nomenclaturas de culturas entre IBGE, MAPA e CONAB.

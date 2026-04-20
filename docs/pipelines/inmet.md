@@ -21,11 +21,12 @@ O sistema mapeia os municípios cadastrados (`dim_municipio`) para as estações
 O `InmetExtractor` busca dados em blocos anuais para evitar timeouts da API do INMET. 
 - Parâmetro Configurável: `days_history` (Default: 730 dias / 2 anos).
 
-### 3. Agregação Diária
-Os dados horários são consolidados em registros diários para otimização:
+### 3. Agregação e Limpeza (Cleaners)
+Executado por `src/pipeline/cleaners/inmet.py`:
 - **Precipitação**: Soma (Total mm/dia).
 - **Temperatura**: Mínima, Máxima e Média aritmética.
 - **Umidade**: Média aritmética.
+- **Deduplicação**: Tratamento de registros duplicados vindos da API.
 
 ### 4. Carga (Idempotência)
 - Utiliza **Bulk Upsert** com chave única `(id_municipio, data)`.

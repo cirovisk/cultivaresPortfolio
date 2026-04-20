@@ -16,11 +16,12 @@ Extração de dados de produção agrícola das lavouras temporárias através d
     - **Período (`p`):** Ano específico (configurado no extrator).
 3.  **URL Exemplo:** `https://apisidra.ibge.gov.br/values/t/1612/n6/all/v/109,216,214/p/2022/c81/40280`
 
-## 🔄 Transformações (Silver Layer)
-- **Normalização de Colunas:** Mapeamento de códigos SIDRA (D2N, V, D1C) para nomes amigáveis (`variavel`, `valor`, `cod_municipio_ibge`).
-- **Pivoteamento:** As variáveis que vêm como linhas na API são transformadas em colunas fato (`area_plantada_ha`, `area_colhida_ha`, etc).
+## 🔄 Transformações (Cleaners)
+Lógica implementada em `src/pipeline/cleaners/sidra.py`:
+- **Normalização de Colunas:** Mapeamento de códigos SIDRA (D2N, V, D1C) para nomes amigáveis.
+- **Pivoteamento:** Transformação de variáveis (Linhas API) em colunas fato.
 - **Tratamento de Nulos:** Conversão de símbolos do IBGE (`...`, `-`) para `NaN`.
-- **Normalização de Nomes:** Aplicação de `normalize_culture_name` para garantir que "Soja (em grão)" vire "soja".
+- **Cultura Match:** Aplicação de `normalize_culture_name`.
 
 ## 💾 Armazenamento
 Os dados são carregados na tabela `fato_producao_pam` no PostgreSQL, mantendo o histórico por ano e município.
