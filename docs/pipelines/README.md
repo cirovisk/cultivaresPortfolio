@@ -1,6 +1,6 @@
 # Documentação de Pipelines (ETL)
 
-Esta pasta contém o detalhamento técnico de cada pipeline de extração e transformação (ETL) implementado no projeto **Cultivares**.
+Esta pasta contém o detalhamento técnico de cada pipeline de extração e transformação (ETL) implementado no projeto **AgroHarvest BR**.
 
 ## 📑 Índice de Fontes
 

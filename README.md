@@ -1,6 +1,8 @@
-# Cultivares - Pipeline de Dados Agrícolas
+# AgroHarvest BR - Pipeline de Dados Agrícolas
 
-Este projeto é uma solução de **Engenharia de Dados** focada na integração de múltiplos datasets do setor agrícola brasileiro. Ele consolida informações de registros de cultivares, produção agrícola municipal e zoneamento de risco climático em um data warehouse estruturado.
+![AgroHarvest BR Banner](./assets/banner.png)
+
+Este projeto é uma solução de **Engenharia de Dados** focada na integração de múltiplos datasets do setor agrícola brasileiro. Ele consolida informações de registros de cultivares (RNC), produção agrícola municipal (PAM) e zoneamento de risco climático (ZARC) em um data warehouse estruturado.
 
 ## 🚀 Objetivo
 
@@ -95,4 +97,4 @@ Este projeto utiliza bases de dados públicas regidas pela Lei de Acesso à Info
 -   **INMET:** Dados públicos regidos pela LAI. A citação da fonte (**Instituto Nacional de Meteorologia - INMET**) é obrigatória conforme normas técnicas.
 
 ---
-*Este projeto faz parte de um portfólio de engenharia de dados focado em agronegócio.*
+*Este projeto faz parte de um portfólio de engenharia de dados (AgroHarvest BR) focado em agronegócio.*

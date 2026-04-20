@@ -1,6 +1,6 @@
-# Metadados do Banco de Dados - Cultivares
+# Metadados do Banco de Dados - AgroHarvest BR
 
-Este documento descreve a estrutura do banco de Dados PostgreSQL utilizado no projeto **Cultivares**, seguindo uma modelagem **Star Schema** (Modelo Estrela).
+Este documento descreve a estrutura do banco de Dados PostgreSQL utilizado no projeto **AgroHarvest BR**, seguindo uma modelagem **Star Schema** (Modelo Estrela).
 
 ## 🏗️ Arquitetura de Dados
 

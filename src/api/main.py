@@ -9,8 +9,8 @@ from api.routers import culturas, municipios, producao, insumos, clima, analytic
 limiter = Limiter(key_func=get_remote_address, default_limits=["30 per minute"])
 
 app = FastAPI(
-    title="Cultivares API",
-    description="API somente-leitura para dados agropecuários do projeto Cultivares.",
+    title="AgroHarvest API",
+    description="API somente-leitura para dados agropecuários do projeto AgroHarvest BR.",
     version="1.0.0"
 )
 
@@ -27,4 +27,4 @@ app.include_router(analytics.router)
 
 @app.get("/")
 def health_check():
-    return {"status": "ok", "message": "Cultivares API rodando!"}
+    return {"status": "ok", "message": "AgroHarvest API rodando!"}
