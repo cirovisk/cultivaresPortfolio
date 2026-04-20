@@ -1,5 +1,6 @@
 import os
 import logging
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, BigInteger, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
@@ -8,6 +9,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger(__name__)
 
 # Configuração: Credenciais via variáveis de ambiente
+load_dotenv()
 DB_USER = os.getenv("POSTGRES_USER", "cultivares_user")
 DB_PASS = os.getenv("POSTGRES_PASSWORD", "cultivares_password")
 DB_HOST = os.getenv("POSTGRES_HOST", "localhost")

@@ -62,7 +62,13 @@ O projeto segue uma arquitetura modular baseada em um modelo Estrela (Star Schem
 
 ### Passo a Passo
 
-1.  **Subir o ambiente e Executar o Pipeline:**
+1.  **Configurar Variáveis de Ambiente:**
+    ```bash
+    cp .env.example .env
+    ```
+    *Edite o arquivo `.env` se desejar alterar as credenciais padrão do banco de dados.*
+
+2.  **Subir o ambiente e Executar o Pipeline:**
     ```bash
     docker-compose run --rm app
     ```
