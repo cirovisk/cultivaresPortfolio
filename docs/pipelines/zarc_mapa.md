@@ -13,10 +13,11 @@ O processo de extração do ZARC no projeto foca em identificar os cenários de 
 3.  **Tipo de Solo:** Identificação de solos (Tipo 1, 2 e 3).
 4.  **Decêndios:** Períodos de 10 dias de plantio recomendados.
 
-## 🔄 Transformações (Silver Layer)
-- **Extração de Parâmetros:** Identificação de quais decêndios (janelas de plantio) possuem riscos de 20%, 30% ou 40%.
-- **Padronização Geográfica:** Vinculação robusta com a `DimMunicipio` através do código IBGE.
-- **Mapeamento de Solo:** Conversão de códigos brutos para descrições de textura de solo (Arenoso, Médio, Argiloso).
+## 🔄 Transformações (Cleaners)
+Lógica centralizada em `src/pipeline/cleaners/zarc.py`:
+- **Extração de Parâmetros:** Identificação de decêndios com riscos (20%, 30%, 40%).
+- **Cultura Match:** Mapeamento via `get_cultura_id`.
+- **Mapeamento de Solo:** Conversão para descrições de textura (Arenoso, Médio, Argiloso).
 
 ## 💾 Armazenamento
 Os dados são persistidos na tabela `fato_risco_zarc`. Este dataset é crucial para correlacionar com a **PAM**, permitindo analisar se os agricultores estão plantando dentro ou fora das janelas de risco recomendadas.

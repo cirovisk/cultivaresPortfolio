@@ -21,9 +21,11 @@ O pipeline extrai e processa dados das seguintes fontes:
 
 ## 🛠️ Tecnologias Utilizadas
 
--   **Linguagem:** Python 3.10+
--   **Processamento de Dados:** Pandas, NumPy
--   **Banco de Dados:** PostgreSQL (armazenamento final) via SQLAlchemy
+-   **Linguagem:** Python 3.12+
+-   **Análise de Dados:** Pandas, NumPy
+-   **Banco de Dados:** PostgreSQL via SQLAlchemy (ORM)
+-   **API:** FastAPI, Pydantic, Uvicorn
+-   **Segurança:** SlowAPI (Rate Limiting)
 -   **Testes Automáticos:** Pytest
 -   **Infraestrutura:** Docker & Docker Compose
 -   **CI/CD:** GitHub Actions
@@ -39,15 +41,18 @@ O projeto segue uma arquitetura modular baseada em um modelo Estrela (Star Schem
 
 ```text
 .
-├── data/               # Dados brutos e persistência local (cache)
-├── notebooks/          # Análises exploratórias e prototipagem
-├── src/
-│   ├── db/            # Definição do esquema e manager do banco
-│   ├── pipeline/      # Classes Extratoras (ETL)
-│   └── main.py        # Orquestrador principal do pipeline
-├── tests/              # Suite de testes unitários e de integração
-├── Dockerfile          # Definição do container da aplicação
-└── docker-compose.yml  # Orquestração do banco e serviços
+├── docker/                 # Configurações Docker
+│   └── app.Dockerfile      # Imagem única para ETL, API e Testes
+├── docs/                   # Documentação técnica e schemas
+├── src/                    # Código-fonte (Python root via PYTHONPATH)
+│   ├── api/           # Camada de API (Endpoints, Routers, Schemas)
+│   ├── db/            # Modelagem Star Schema (SQLAlchemy)
+│   ├── pipeline/      # Extractors e Cleaners
+│   │   └── cleaners/  # Lógica de limpeza desacoplada (Funcional)
+│   └── main.py        # Orquestrador do pipeline de dados
+├── tests/              # Suite de testes (Unitários e Integração API)
+├── docker-compose.yml  # Orquestração de serviços (app, api, test)
+└── DATABASE_METADATA.md # Dicionário de dados do banco
 ```
 
 ## ⚙️ Como Executar
@@ -57,22 +62,28 @@ O projeto segue uma arquitetura modular baseada em um modelo Estrela (Star Schem
 
 ### Passo a Passo
 
-1.  **Subir o ambiente e Executar o Pipeline:**
+1.  **Configurar Variáveis de Ambiente:**
+    ```bash
+    cp .env.example .env
+    ```
+    *Edite o arquivo `.env` se desejar alterar as credenciais padrão do banco de dados.*
+
+2.  **Subir o ambiente e Executar o Pipeline:**
     ```bash
     docker-compose run --rm app
     ```
     *Este comando inicializa o banco de dados PostgreSQL e executa o processo de extração completo.*
 
-2.  **Executar Testes (Docker):**
+2.  **Subir a API e Acessar Documentação:**
+    ```bash
+    docker-compose up api
+    ```
+    *Acesse `http://localhost:8000/docs` para visualizar a documentação interativa (Swagger).*
+
+3.  **Executar Testes de Integração e Unitários:**
     ```bash
     docker-compose run --rm test
     ```
-
-Para garantir a qualidade dos dados e a integridade do código, utilize o serviço de teste do Docker Compose:
-
-```bash
-docker-compose run --rm test
-```
 
 ## ⚖️ Licença e Uso de Dados
 

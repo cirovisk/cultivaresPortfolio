@@ -13,10 +13,12 @@ Extração de indicadores de mercado e estimativas de safra da Companhia Naciona
 2.  **Séries de Preços:** Captura de preços médios ao nível de UF ou praça de comercialização.
 3.  **Levantamentos de Safra:** Extração de área plantada (mil ha), produção (mil t) e produtividade (t/ha).
 
-## 🔄 Transformações (Silver Layer)
-- **Normalização de Unidades:** Conversão de medidas (ex: mil hectares para hectares) para manter paridade com a PAM/SIDRA.
-- **Tratamento de Strings:** Remoção de espaços, normalização de UFs e culturas.
-- **Hierarquia Temporal:** Mapeamento de "Ano Agrícola" (ex: 2023/24) para representações temporais comparáveis.
+## 🔄 Transformações (Cleaners)
+Lógica centralizada em `src/pipeline/cleaners/conab.py`:
+- **Normalização de Unidades:** Conversão de mil hectares/toneladas para unidades base (ha/t).
+- **Tratamento de Strings:** Remoção de espaços e normalização de UFs.
+- **Hierarquia Temporal:** Mapeamento de "Ano Agrícola" (ex: 2023/24) para o ano de início da safra.
+- **Cultura Match:** Vínculo via `normalize_culture_name`.
 
 ## 💾 Armazenamento
 Os dados são carrgados em três tabelas factuais:

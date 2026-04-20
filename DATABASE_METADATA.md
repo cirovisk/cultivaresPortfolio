@@ -160,7 +160,16 @@ Dados meteorológicos diários agregados por município.
 
 ---
 
+## 🔒 Segurança e Acesso
+
+O banco de dados segue o princípio do privilégio mínimo para a camada de exposição:
+
+1.  **Usuário de Aplicação (`postgres`):** Possui permissão de `OWNER`, utilizado exclusivamente pelo pipeline de ETL para criar tabelas e realizar `UPSERT`.
+2.  **Usuário de API (`api_reader`):** Possui permissão restrita de `SELECT` em todas as tabelas. 
+    - Toda a comunicação da API FastAPI é feita via este usuário.
+    - Script de configuração: `docs/setup_api_reader.sql`.
+
 ## 🔄 Auditoria e Metadados Técnicos
 
 Todas as tabelas de Fato possuem o campo:
-- `data_modificacao`: Timestamp da última inserção ou atualização (UPSERT), facilitando cargas incrementais.
+- `data_modificacao`: Timestamp da última inserção ou atualização (UPSERT), facilitando cargas incrementais e auditoria de frescor dos dados.

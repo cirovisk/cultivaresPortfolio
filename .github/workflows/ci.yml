@@ -16,7 +16,7 @@ jobs:
         env:
           POSTGRES_USER: cultivares_user
           POSTGRES_PASSWORD: cultivares_password
-          POSTGRES_DB: cultivares_test
+          POSTGRES_DB: cultivares_db
         ports:
           - 5432:5432
         options: >-
@@ -40,6 +40,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Run data quality tests
+    - name: Run tests
+      env:
+        USE_SQLITE: "true"
       run: |
         pytest tests/ -v

@@ -13,22 +13,24 @@ services:
     restart: unless-stopped
 
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
     container_name: cultivares_app
+    env_file: .env
     volumes:
       - .:/app
     environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_USER=cultivares_user
-      - POSTGRES_PASSWORD=cultivares_password
-      - POSTGRES_DB=cultivares_db
       - PYTHONPATH=/app/src
     depends_on:
       - postgres
 
   test:
-    build: .
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
     container_name: cultivares_test
+    env_file: .env
     volumes:
       - .:/app
     environment:
@@ -36,6 +38,25 @@ services:
     working_dir: /app
     command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
     # Testes unitários usam SQLite in-memory (conftest.py) — não precisam de Postgres
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    container_name: cultivares_api
+    env_file: .env
+    volumes:
+      - .:/app
+    environment:
+      - POSTGRES_USER=api_reader
+      - POSTGRES_PASSWORD=api_reader_pass
+      - PYTHONPATH=/app/src
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    depends_on:
+      - postgres
+    restart: unless-stopped
 
 volumes:
   pgdata:

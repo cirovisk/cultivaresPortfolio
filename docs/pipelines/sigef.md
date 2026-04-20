@@ -14,10 +14,12 @@ Os dados são extraídos do Portal de Dados Abertos do MAPA:
 - O extrator `SigefExtractor` baixa os arquivos CSV diretamente do portal.
 - Implementa cache local (30 dias) e desabilita verificação SSL devido a instabilidades frequentes nos certificados do MAPA.
 
-### 2. Transformação
-- **Limpeza de Strings**: Aplica `normalize_string` (lowercase, remoção de acentos) para cruzamento de dados.
-- **Normalização de Municípios**: Mapeia nomes de municípios + UF para `id_municipio` na base de dados.
-- **Tipagem**: Conversão de áreas e volumes para `float`, e datas para o formato ISO 8601.
+### 2. Transformação (Cleaners)
+Lógica isolada em `src/pipeline/cleaners/sigef.py`:
+- **Limpeza de Strings**: Aplica `normalize_string` para cruzamento.
+- **Normalização de Municípios**: Busca via código IBGE ou Nome+UF.
+- **Tipagem**: Conversão de áreas para `float` e datas para o padrão ISO.
+- **Cultura Match**: Vínculo via `get_cultura_id`.
 
 ### 3. Carga (Idempotência)
 - Utiliza **Bulk Upsert** (ON CONFLICT DO UPDATE).

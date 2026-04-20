@@ -10,10 +10,11 @@ Extração do cadastro oficial de todas as cultivares (sementes/mudas) registrad
 1.  **Web Scraping / Download:** O pipeline acessa a base consolidada do CultivarWeb que lista as variedades por cultura.
 2.  **Granularidade:** O dado vem ao nível de **Variedade (Cultivar)** e seu respectivo **Mantenedor** (empresa responsável pela genética).
 
-## 🔄 Transformações (Silver Layer)
-- **Extração de Empresas:** O pipeline extrai o nome do mantenedor e tenta classificar o **Setor** (ex: Privado vs Público - EMBRAPA).
-- **Datas de Validade:** Transformação de campos de texto em objetos `DateTime` para monitorar a vigência dos registros.
-- **Normalização de Cultivares:** Padronização de nomes científicos e comuns.
+## 🔄 Transformações (Cleaners)
+Executado em `src/pipeline/cleaners/cultivares.py`:
+- **Extração de Empresas:** Normaliza o nome do mantenedor e classifica o **Setor** (ex: Privado vs Público - EMBRAPA).
+- **Datas de Validade:** Conversão de strings para objetos `date`.
+- **Cultura Match:** Uso de `normalize_culture_name` e busca de IDs na dimensão.
 
 ## 💾 Armazenamento
 - Os mantenedores alimentam a `dim_mantenedor`.

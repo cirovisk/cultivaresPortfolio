@@ -23,3 +23,6 @@ notebooks/
 
 # SO
 .DS_Store
+
+# Segurança
+.env

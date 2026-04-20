@@ -1,6 +1,16 @@
 from pydantic import BaseModel, ConfigDict
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Generic, TypeVar
 from datetime import date
+
+T = TypeVar("T")
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    items: List[T]
+
 
 # ==========================================
 # 1. SCHEMAS SIMPLES (Pesquisas Rápidas e Listagens)
@@ -24,6 +34,78 @@ class ProducaoPAMSimplesSchema(BaseModel):
     ano: int
     area_plantada_ha: Optional[float] = None
     qtde_produzida_ton: Optional[float] = None
+
+class ProducaoPAMSchema(BaseModel):
+    id_producao: int
+    ano: int
+    area_plantada_ha: Optional[float] = None
+    area_colhida_ha: Optional[float] = None
+    qtde_produzida_ton: Optional[float] = None
+    valor_producao_mil_reais: Optional[float] = None
+    # Adicionamos cultura e municipio resolvidos no router para facilitar a resposta
+    cultura: str
+    municipio_nome: str
+    uf: Optional[str] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class ProducaoConabSchema(BaseModel):
+    id_conab: int
+    uf: str
+    ano_agricola: str
+    safra: str
+    area_plantada_mil_ha: Optional[float] = None
+    producao_mil_t: Optional[float] = None
+    produtividade_t_ha: Optional[float] = None
+    cultura: str
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class SigefProducaoSchema(BaseModel):
+    id_sigef_producao: int
+    safra: str
+    especie: str
+    categoria: str
+    area_ha: Optional[float] = None
+    producao_bruta_t: Optional[float] = None
+    producao_est_t: Optional[float] = None
+    cultura: str
+    municipio_nome: str
+    uf: Optional[str] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class AgrofitSchema(BaseModel):
+    id_agrofit: int
+    nr_registro: str
+    marca_comercial: str
+    classe: str
+    praga_comum: Optional[str] = None
+    cultura: str
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class FertilizanteSchema(BaseModel):
+    id_fertilizante: int
+    uf: str
+    municipio: str
+    nr_registro_estabelecimento: str
+    razao_social: str
+    area_atuacao: Optional[str] = None
+    atividade: Optional[str] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class MetereologiaSchema(BaseModel):
+    id_meteo: int
+    data: date
+    precipitacao_total_mm: Optional[float] = None
+    temp_media_c: Optional[float] = None
+    umidade_media: Optional[float] = None
+    municipio_nome: str
+    uf: Optional[str] = None
+    
+    model_config = ConfigDict(from_attributes=True)
 
 # ==========================================
 # 2. SCHEMAS COMPOSTOS (Visões Analíticas Avançadas)

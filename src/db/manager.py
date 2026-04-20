@@ -1,5 +1,6 @@
 import os
 import logging
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, BigInteger, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
@@ -8,13 +9,18 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger(__name__)
 
 # Configuração: Credenciais via variáveis de ambiente
+load_dotenv()
 DB_USER = os.getenv("POSTGRES_USER", "cultivares_user")
 DB_PASS = os.getenv("POSTGRES_PASSWORD", "cultivares_password")
 DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
 DB_PORT = os.getenv("POSTGRES_PORT", "5432")
 DB_NAME = os.getenv("POSTGRES_DB", "cultivares_db")
 
-DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# Permite forçar SQLite para testes rápidos
+if os.getenv("USE_SQLITE", "false").lower() == "true":
+    DATABASE_URL = "sqlite:///:memory:"
+else:
+    DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 engine = create_engine(DATABASE_URL, echo=False)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

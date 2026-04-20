@@ -1,16 +1,13 @@
 import pytest
 import pandas as pd
-from src.pipeline.cultivares import CultivaresExtractor
-from src.pipeline.sidra import SidraExtractor
-from src.pipeline.zarc import ZarcExtractor
-from src.pipeline.conab import ConabExtractor
-from src.pipeline.agrofit import AgrofitExtractor
+from src.pipeline.cleaners.cultivares import clean_cultivares
+from src.pipeline.cleaners.sidra import clean_sidra
+from src.pipeline.cleaners.zarc import clean_zarc
+from src.pipeline.cleaners.conab import clean_conab
+from src.pipeline.cleaners.agrofit import clean_agrofit
 
 def test_cultivares_transform(mock_cultivares_raw):
-    # Inicializa extrator sem depender de cache_path para teste
-    ext = CultivaresExtractor(use_cache=False, cache_path="")
-    
-    df_clean = ext.transform(mock_cultivares_raw)
+    df_clean = clean_cultivares(mock_cultivares_raw)
     
     assert not df_clean.empty
     
@@ -36,8 +33,7 @@ def test_cultivares_transform(mock_cultivares_raw):
     assert row_milho["cultura"] == "milho"
 
 def test_sidra_transform(mock_sidra_raw):
-    ext = SidraExtractor(ano="2022")
-    df_clean = ext.transform(mock_sidra_raw)
+    df_clean = clean_sidra(mock_sidra_raw)
     
     assert not df_clean.empty
     # Pivot_table cria 1 linha por index, entao tem que ter 2 linhas (Mun A - soja, Mun B - trigo)
@@ -52,8 +48,7 @@ def test_sidra_transform(mock_sidra_raw):
     assert row_mun_a["area_plantada_ha"] == 1000.0
 
 def test_zarc_transform(mock_zarc_raw):
-    ext = ZarcExtractor()
-    df_clean = ext.transform(mock_zarc_raw)
+    df_clean = clean_zarc(mock_zarc_raw)
     
     assert not df_clean.empty
     
@@ -67,8 +62,7 @@ def test_zarc_transform(mock_zarc_raw):
     assert row["cultura"] == "soja"
 
 def test_conab_transform(mock_conab_raw):
-    ext = ConabExtractor(data_dir="tests/mock_data")
-    processed = ext.transform(mock_conab_raw)
+    processed = clean_conab(mock_conab_raw)
     
     assert "producao_estimativa" in processed
     assert "precos_mun_mensal" in processed
@@ -82,8 +76,7 @@ def test_conab_transform(mock_conab_raw):
     assert df_preco.iloc[0]["cod_municipio_ibge"] == "5107909"
 
 def test_agrofit_transform(mock_agrofit_raw):
-    ext = AgrofitExtractor(use_cache=False)
-    df_clean = ext.transform(mock_agrofit_raw)
+    df_clean = clean_agrofit(mock_agrofit_raw)
     
     assert not df_clean.empty
     assert "nr_registro" in df_clean.columns

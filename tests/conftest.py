@@ -15,7 +15,7 @@ TEST_DATABASE_URL = "sqlite:///:memory:"
 
 @pytest.fixture(scope="session")
 def engine():
-    _engine = create_engine(TEST_DATABASE_URL, echo=False)
+    _engine = create_engine(TEST_DATABASE_URL, echo=False, connect_args={"check_same_thread": False})
     Base.metadata.create_all(bind=_engine)
     yield _engine
     Base.metadata.drop_all(bind=_engine)
@@ -120,3 +120,17 @@ def mock_agrofit_raw():
         "PRAGA_NOME_COMUM": ["Galinha", "Lagarta"]
     }
     return pd.DataFrame(data)
+
+@pytest.fixture(autouse=True)
+def override_get_db(db_session):
+    """Sobrescreve a dependência get_session do FastAPI para usar a sessão de teste (SQLite)."""
+    # Import tardio para evitar conflitos de importação circular
+    from api.main import app
+    from api.dependencies import get_session
+    
+    def _get_session_override():
+        return db_session
+    
+    app.dependency_overrides[get_session] = _get_session_override
+    yield
+    app.dependency_overrides.clear()
