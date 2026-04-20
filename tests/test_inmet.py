@@ -2,6 +2,7 @@ import pytest
 import pandas as pd
 from datetime import datetime
 from src.pipeline.inmet import InmetExtractor
+from src.pipeline.cleaners.inmet import clean_inmet
 
 @pytest.fixture
 def mock_inmet_hourly_data():
@@ -12,11 +13,10 @@ def mock_inmet_hourly_data():
     ])
 
 def test_inmet_aggregation(mock_inmet_hourly_data):
-    ext = InmetExtractor(use_cache=False)
     # Simula dicionário retornado pelo extract
     dataframes = {"A101": mock_inmet_hourly_data}
     
-    df_daily = ext.transform(dataframes)
+    df_daily = clean_inmet(dataframes)
     
     assert not df_daily.empty
     assert len(df_daily) == 2
