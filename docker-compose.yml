@@ -11,6 +11,11 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./docs/setup_api_reader.sql:/docker-entrypoint-initdb.d/01_setup_api_reader.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cultivares_user -d cultivares_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
     deploy:
       resources:
@@ -28,7 +33,8 @@ services:
     environment:
       - PYTHONPATH=/app/src
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -64,7 +70,8 @@ services:
       - "8000:8000"
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     deploy:
       resources:

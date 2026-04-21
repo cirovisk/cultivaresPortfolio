@@ -1,6 +1,6 @@
 import logging
 import pandas as pd
-from sqlalchemy import text, inspect
+from sqlalchemy import text, inspect, Integer, BigInteger, Numeric
 from sqlalchemy.dialects.postgresql import insert
 from db.manager import (
     engine, DimCultura, DimMunicipio, DimMantenedor, 
@@ -18,9 +18,7 @@ def get_cultura_id(nome_cultura, mapping):
     def norm(s):
         import unicodedata
         s = str(s).lower().strip()
-        # Remove acentos
         s = "".join(c for c in unicodedata.normalize('NFKD', s) if unicodedata.category(c) != 'Mn')
-        # Normaliza separadores: hífen e underline viram espaço
         return s.replace("-", " ").replace("_", " ")
 
     # Tenta match exato primeiro (antes de normalizar)
@@ -33,11 +31,17 @@ def get_cultura_id(nome_cultura, mapping):
             return cid
     return None
 
-def upsert_data(model, df, index_elements, chunk_size=5000):
+def upsert_data(model, df, index_elements, chunk_size=1000):
     if df.empty: return
     
-    # Filtra colunas que existem no modelo
-    model_cols = [c.key for c in inspect(model).mapper.column_attrs]
+    # Garante que não haja duplicatas no set todo para evitar CardinalityViolation (Postgres)
+    df = df.drop_duplicates(subset=index_elements, keep='last')
+    
+    # Identifica colunas que devem ser inteiras para conversão explícita
+    mapper = inspect(model)
+    pk_cols = [c.key for c in mapper.primary_key]
+    model_int_cols = [c.key for c in mapper.column_attrs if isinstance(c.expression.type, (Integer, BigInteger))]
+    model_cols = [c.key for c in mapper.column_attrs]
     
     for i in range(0, len(df), chunk_size):
         chunk_df = df.iloc[i : i + chunk_size]
@@ -45,16 +49,27 @@ def upsert_data(model, df, index_elements, chunk_size=5000):
         
         valid_records = []
         for r in records:
-            # Converte NaN para None (SQL NULL) para evitar erros de tipo
-            valid_row = {k: (None if pd.isna(v) else v) for k, v in r.items() if k in model_cols}
+            valid_row = {}
+            for k, v in r.items():
+                if k in model_cols:
+                    if pd.isna(v):
+                        valid_row[k] = None
+                    elif k in model_int_cols:
+                        try:
+                            # Garante que IDs e outros campos inteiros sejam int, não float (ex: 4.0 -> 4)
+                            valid_row[k] = int(float(v))
+                        except (ValueError, TypeError):
+                            valid_row[k] = None
+                    else:
+                        valid_row[k] = v
             valid_records.append(valid_row)
 
         if not valid_records: continue
 
         stmt = insert(model).values(valid_records)
         
-        # Colunas para atualizar em caso de conflito (todas exceto as do índice)
-        update_cols = {c: stmt.excluded[c] for c in model_cols if c not in index_elements and c != 'data_modificacao'}
+        # Colunas para atualizar em caso de conflito (todas exceto as do índice, PK e metadados automáticos)
+        update_cols = {c: stmt.excluded[c] for c in model_cols if c not in index_elements and c not in pk_cols and c != 'data_modificacao'}
         
         upsert_stmt = stmt.on_conflict_do_update(
             index_elements=index_elements,
@@ -250,7 +265,11 @@ def load_fact_agrofit(db, df, map_cult):
 def load_fact_fertilizantes(db, df, map_mun_name):
     if df.empty: return
     df_f = df.copy()
-    df_f["id_municipio"] = df_f.apply(lambda x: map_mun_name.get((x["municipio"].lower().strip(), x["uf"].upper())), axis=1)
+    df_f["id_municipio"] = df_f.apply(
+        lambda x: map_mun_name.get((str(x["municipio"]).lower().strip(), str(x["uf"]).upper())) 
+        if pd.notna(x.get("municipio")) and pd.notna(x.get("uf")) else None, 
+        axis=1
+    )
     df_f = df_f.drop_duplicates(subset=["nr_registro_estabelecimento"])
     upsert_data(FatoFertilizante, df_f, index_elements=['nr_registro_estabelecimento'])
     log.info(f"Fato Fertilizantes: {len(df_f)} estabelecimentos upserted.")
@@ -261,7 +280,11 @@ def load_fact_sigef(db, df_dict, map_cult, map_mun_name):
         if df.empty: continue
         df_f = df.copy()
         df_f["id_cultura"] = df_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
-        df_f["id_municipio"] = df_f.apply(lambda x: map_mun_name.get((x["municipio"].lower().strip(), x["uf"].upper())), axis=1)
+        df_f["id_municipio"] = df_f.apply(
+            lambda x: map_mun_name.get((str(x["municipio"]).lower().strip(), str(x["uf"]).upper())) 
+            if pd.notna(x.get("municipio")) and pd.notna(x.get("uf")) else None, 
+            axis=1
+        )
         df_f = df_f.dropna(subset=["id_cultura", "id_municipio"])
         if key == "campos_producao":
             index = ['id_cultura', 'id_municipio', 'safra', 'especie', 'cultivar_raw', 'categoria']
