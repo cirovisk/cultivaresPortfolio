@@ -18,7 +18,7 @@ class SidraExtractor(BaseExtractor):
         "cana-de-açúcar": 39441
     }
 
-    def __init__(self, ano: str = "last", data_dir: str = "data/sidra", use_cache: bool = True):
+    def __init__(self, ano: str = "2021", data_dir: str = "data/sidra", use_cache: bool = True):
         super().__init__()
         self.ano = ano
         self.data_dir = data_dir

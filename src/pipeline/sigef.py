@@ -12,7 +12,7 @@ class SigefExtractor(BaseExtractor):
 
     RESOURCES = {
         "campos_producao": "https://dados.agricultura.gov.br/dataset/c7784a6e-f0ec-4196-a1ce-1d2d4784a58e/resource/6ab20c11-73a0-4ab0-8e13-2420d48dd6f5/download/sigefcamposproducaodesementes.csv",
-        "uso_proprio": "https://dados.agricultura.gov.br/dataset/c7784a6e-f0ec-4196-a1ce-1d2d4784a58e/resource/3fc8e266-ec41-40b0-8d62-157b91b36b2c/download/sigefdeclaracaoareaproducaouseproprio.csv"
+        "reserva_semente": "https://dados.agricultura.gov.br/dataset/c7784a6e-f0ec-4196-a1ce-1d2d4784a58e/resource/3fc8e266-ec41-40b0-8d62-157b91b36b2c/download/sigefdeclaracaoareaproducaouseproprio.csv"
     }
 
     def __init__(self, data_dir="data/sigef", use_cache=True):
@@ -27,6 +27,8 @@ class SigefExtractor(BaseExtractor):
         for key, url in self.RESOURCES.items():
             filename = f"{key}.csv"
             local_path = os.path.join(self.data_dir, filename)
+            if key == "reserva_semente" and os.path.exists(os.path.join(self.data_dir, "uso_proprio.csv")):
+                local_path = os.path.join(self.data_dir, "uso_proprio.csv")
 
             if self.use_cache and os.path.exists(local_path) and not self.is_file_stale(local_path, 15):
                 self.log.info(f"Usando cache SIGEF para {key}...")

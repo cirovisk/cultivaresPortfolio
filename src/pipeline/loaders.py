@@ -1,5 +1,6 @@
 import logging
 import pandas as pd
+import requests
 from sqlalchemy import text, inspect, Integer, BigInteger, Numeric
 from sqlalchemy.dialects.postgresql import insert
 from db.manager import (
@@ -7,9 +8,10 @@ from db.manager import (
     FatoProducaoConab, FatoAgrofit, FatoPrecoConabMensal, 
     FatoPrecoConabSemanal, FatoCultivar, FatoProducaoPAM, 
     FatoRiscoZARC, FatoFertilizante, FatoSigefProducao, 
-    FatoSigefUsoProprio, FatoMeteorologia
+    FatoSigefReservaSemente, FatoMeteorologia
 )
 
+from pipeline.cleaners.zarc import clean_zarc
 log = logging.getLogger(__name__)
 
 def get_cultura_id(nome_cultura, mapping):
@@ -133,6 +135,52 @@ def preencher_dimensao_mantenedor(db, df_cult):
         mant_map[nome] = obj.id_mantenedor
     return mant_map
 
+def carregar_municipios_completo_ibge(db):
+    """
+    Busca a lista oficial de todos os municípios do Brasil via API do IBGE 
+    e popula a DimMunicipio de forma proativa.
+    """
+    log.info("Buscando lista completa de municípios na API do IBGE...")
+    url = "https://servicodados.ibge.gov.br/api/v1/localidades/municipios"
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        muns_data = resp.json()
+    except Exception as e:
+        log.error(f"Falha ao buscar municípios no IBGE: {e}")
+        return preencher_dimensao_municipio(db)
+
+    novos = 0
+    for m in muns_data:
+        cod = str(m["id"])
+        nome = m["nome"]
+        
+        # Extração robusta da UF tentando diferentes caminhos na hierarquia IBGE
+        uf = None
+        try:
+            # Caminho 1: Microrregião -> Mesorregião -> UF
+            uf = m.get("microrregiao", {}).get("mesorregiao", {}).get("UF", {}).get("sigla")
+            
+            # Caminho 2 (Fallback): Região Imediata -> Região Intermediária -> UF
+            if not uf:
+                uf = m.get("regiao-imediata", {}).get("regiao-intermediaria", {}).get("UF", {}).get("sigla")
+        except:
+            uf = "XX" # Fallback extremo para não quebrar a carga
+            
+        uf = str(uf).upper() if uf else "XX"
+        
+        db_mun = db.query(DimMunicipio).filter(DimMunicipio.codigo_ibge == cod).first()
+        if not db_mun:
+            db_mun = DimMunicipio(codigo_ibge=cod, nome=nome, uf=uf)
+            db.add(db_mun)
+            novos += 1
+    
+    if novos > 0:
+        db.commit()
+        log.info(f"DimMunicipio: {novos} novos municípios importados do IBGE.")
+    
+    return preencher_dimensao_municipio(db)
+
 def preencher_dimensao_municipio(db, df_pam=pd.DataFrame(), df_zarc=pd.DataFrame()):
     mun_map_ibge = {}
     mun_map_name = {}
@@ -212,6 +260,13 @@ def load_fact_zarc(db, data, map_cult, map_mun):
 
     df = data
     if df.empty: return
+    
+    # Aplica limpeza no DataFrame (seja ele um chunk ou o DF completo)
+    # se ainda possuir colunas no formato raw (ex: sem a coluna 'cultura' normalizada)
+    if "cultura" not in df.columns:
+        df = clean_zarc(df)
+        
+    if df.empty: return
     df_f = df.copy()
     df_f["id_cultura"] = df_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
     df_f["cod_municipio_ibge"] = df_f["cod_municipio_ibge"].astype(str).str[:7]
@@ -289,9 +344,9 @@ def load_fact_sigef(db, df_dict, map_cult, map_mun_name):
         if key == "campos_producao":
             index = ['id_cultura', 'id_municipio', 'safra', 'especie', 'cultivar_raw', 'categoria']
             upsert_data(FatoSigefProducao, df_f, index_elements=index)
-        elif key == "uso_proprio":
+        elif key == "reserva_semente":
             index = ['id_cultura', 'id_municipio', 'periodo', 'especie', 'cultivar_raw']
-            upsert_data(FatoSigefUsoProprio, df_f, index_elements=index)
+            upsert_data(FatoSigefReservaSemente, df_f, index_elements=index)
         log.info(f"Fato SIGEF ({key}): Upsert concluído.")
 
 def load_fact_meteorologia(db, df, extractor, all_muns):

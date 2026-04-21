@@ -51,7 +51,7 @@ def clean_sigef_producao(df: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
-def clean_sigef_uso_proprio(df: pd.DataFrame) -> pd.DataFrame:
+def clean_sigef_reserva_semente(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty: return df
     df = df.copy()
 
@@ -86,6 +86,9 @@ def clean_sigef(dataframes: dict) -> dict:
     processed = {}
     if "campos_producao" in dataframes:
         processed["campos_producao"] = clean_sigef_producao(dataframes["campos_producao"])
-    if "uso_proprio" in dataframes:
-        processed["uso_proprio"] = clean_sigef_uso_proprio(dataframes["uso_proprio"])
+    # Suporta ambas as chaves: nova ('reserva_semente') e legada ('uso_proprio')
+    # Nota: Não usar 'or' com DataFrames — causa 'truth value ambiguous'. Usar .get() com checagem explícita.
+    reserva_df = dataframes.get("reserva_semente") if "reserva_semente" in dataframes else dataframes.get("uso_proprio")
+    if reserva_df is not None:
+        processed["reserva_semente"] = clean_sigef_reserva_semente(reserva_df)
     return processed

@@ -13,7 +13,8 @@ from pipeline.inmet import InmetExtractor
 from db.manager import init_db, get_db, DimMunicipio
 from pipeline.loaders import (
     preencher_dimensao_cultura, preencher_dimensao_mantenedor, 
-    preencher_dimensao_municipio, load_fact_cultivares, load_fact_pam,
+    preencher_dimensao_municipio, carregar_municipios_completo_ibge,
+    load_fact_cultivares, load_fact_pam,
     load_fact_zarc, load_fact_conab, load_fact_agrofit, 
     load_fact_fertilizantes, load_fact_sigef, load_fact_meteorologia
 )
@@ -82,10 +83,10 @@ def main():
     # 1. DimCultura (Sempre primeiro)
     map_cult = preencher_dimensao_cultura(db, culturas_alvo)
 
-    # 2. Dimensões e Fatos Dependentes (Cultivares, SIDRA, ZARC)
-    # Estas fontes são processadas juntas ou em ordem para alimentar DimMunicipio / DimMantenedor
-    
-    # --- CULTIVARES ---
+    # 2. Dimensões baseadas em Município (Sempre garantindo carga completa primeiro)
+    map_mun, map_mun_name = carregar_municipios_completo_ibge(db)
+
+    # 3. Cultivares (Depende de Mantenedor)
     df_cult = pd.DataFrame()
     if "cultivares" in args.sources:
         df_cult = run_step("cultivares", CultivaresExtractor(use_cache=True))
@@ -97,7 +98,7 @@ def main():
     # --- SIDRA e ZARC (Populam DimMunicipio) ---
     df_sidra = pd.DataFrame()
     if "sidra" in args.sources:
-        ext = SidraExtractor(ano="2022")
+        ext = SidraExtractor()
         ext.TARGET_CROPS = {k: ext.TARGET_CROPS[k] for k in culturas_alvo if k in ext.TARGET_CROPS}
         df_sidra = run_step("sidra", ext)
 
@@ -107,13 +108,9 @@ def main():
         ext_zarc = ZarcExtractor()
         ext_zarc.TARGET_CROPS = [c.replace("ç", "c").replace("ã", "a") for c in culturas_alvo]
         df_zarc_muns = ext_zarc.get_municipios_only()
-        # Preparamos o gerador para os fatos, mas não o consumimos ainda
         zarc_gen = ext_zarc.extract()
 
-    if not df_sidra.empty or not df_zarc_muns.empty:
-        log.info("Populando DimMunicipio...")
-        map_mun, map_mun_name = preencher_dimensao_municipio(db, df_sidra, df_zarc_muns)
-        
+    if not df_sidra.empty or zarc_gen:
         if not df_sidra.empty:
             load_fact_pam(db, df_sidra, map_cult, map_mun)
             del df_sidra
@@ -121,17 +118,9 @@ def main():
         if zarc_gen:
             log.info("Carregando Fatos ZARC via Streaming...")
             load_fact_zarc(db, zarc_gen, map_cult, map_mun)
-            # Geradores são consumidos, não precisam de del df manual, mas ajuda o GC
             del zarc_gen
         
         gc.collect()
-    else:
-        # Se não processou sidra/zarc nesta rodada, apenas carrega o mapeamento existente
-        log.info("Carregando mapeamento de municípios existente...")
-        map_mun, map_mun_name = {}, {} # Serão populados sob demanda se outras fontes precisarem
-        # Nota: As loaders abaixo já lidam com o mun_map. Se estiver vazio, elas podem falhar no mapping.
-        # Idealmente preencher_dimensao_municipio deveria ser capaz de retornar o mapa do que já existe.
-        map_mun, map_mun_name = preencher_dimensao_municipio(db)
 
     # 3. Outras Fontes (Sequencial)
     

@@ -179,9 +179,9 @@ class FatoSigefProducao(Base):
  
     __table_args__ = (UniqueConstraint('id_cultura', 'id_municipio', 'safra', 'especie', 'cultivar_raw', 'categoria', name='_sigef_prod_uc'),)
  
-class FatoSigefUsoProprio(Base):
-    __tablename__ = "fato_sigef_uso_proprio"
-    id_sigef_uso_proprio = Column(Integer, primary_key=True, autoincrement=True)
+class FatoSigefReservaSemente(Base):
+    __tablename__ = "fato_sigef_reserva_semente"
+    id_sigef_reserva = Column(Integer, primary_key=True, autoincrement=True)
     id_cultura = Column(Integer, ForeignKey("dim_cultura.id_cultura"))
     id_municipio = Column(Integer, ForeignKey("dim_municipio.id_municipio"))
     tipo_periodo = Column(String)
@@ -193,7 +193,7 @@ class FatoSigefUsoProprio(Base):
     area_estimada_ha = Column(Float)
     data_modificacao = Column(DateTime, server_default=func.now(), onupdate=func.now())
  
-    __table_args__ = (UniqueConstraint('id_cultura', 'id_municipio', 'periodo', 'especie', 'cultivar_raw', name='_sigef_uso_uc'),)
+    __table_args__ = (UniqueConstraint('id_cultura', 'id_municipio', 'periodo', 'especie', 'cultivar_raw', name='_sigef_reserva_uc'),)
  
 class FatoMeteorologia(Base):
     __tablename__ = "fato_meteorologia"
