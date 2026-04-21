@@ -72,11 +72,12 @@ class InmetExtractor(BaseExtractor):
             s_str = current_start.strftime("%Y-%m-%d")
             e_str = current_end.strftime("%Y-%m-%d")
             
-            url = f"{self.API_BASE}/estacao/data/{s_str}/{e_str}/{sid}"
+            url = f"{self.API_BASE}/estacao/{s_str}/{e_str}/{sid}"
             self.log.info(f"Buscando INMET {sid} no período {s_str} a {e_str}...")
             
             try:
-                resp = requests.get(url, timeout=60)
+                headers = {"User-Agent": "Mozilla/5.0"}
+                resp = requests.get(url, headers=headers, timeout=60)
                 if resp.status_code == 200:
                     data = resp.json()
                     if isinstance(data, list) and data:

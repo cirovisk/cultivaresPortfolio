@@ -5,9 +5,10 @@ Este pipeline integra dados meteorológicos históricos do **INMET (Instituto Na
 ## Fontes de Dados
 
 - **API INMET**: `https://apitempo.inmet.gov.br`
-- **Endpoints Utilizados**:
-    - `/estacoes/T`: Lista de estações automáticas (metadados).
-    - `/estacao/data/<INICIO>/<FIM>/<ID_ESTACAO>`: Dados horários por estação.
+-   **Endpoints Utilizados**:
+    -   `/estacoes/T`: Lista de estações automáticas (metadados).
+    -   `/estacao/<INICIO>/<FIM>/<ID_ESTACAO>`: Dados horários por estação (Endpoint corrigido).
+
 
 ## Processo de Extração (ETL)
 

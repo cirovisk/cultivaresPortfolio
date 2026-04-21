@@ -2,7 +2,11 @@
 
 ![AgroHarvest BR Banner](./assets/banner.png)
 
-Este projeto é uma solução de **Engenharia de Dados** focada na integração de múltiplos datasets do setor agrícola brasileiro. Ele consolida informações de registros de cultivares (RNC), produção agrícola municipal (PAM) e zoneamento de risco climático (ZARC) em um data warehouse estruturado.
+## 🏗️ Arquitetura do Sistema
+![Arquitetura Híbrida - AgroHarvest BR](./assets/architecture_diagram.png)
+
+Este projeto é uma solução de **Engenharia de Dados** focada na integração de múltiplos datasets do setor agrícola brasileiro.
+ Ele consolida informações de registros de cultivares (RNC), produção agrícola municipal (PAM) e zoneamento de risco climático (ZARC) em um data warehouse estruturado.
 
 ## 🚀 Objetivo
 
@@ -12,14 +16,15 @@ O objetivo principal é criar um ambiente unificado para análise de dados agro,
 
 O pipeline extrai e processa dados das seguintes fontes:
 
-1.  **MAPA/SNPC (CultivarWeb):** Dados sobre cultivares registradas e protegidas no Brasil.
-2.  **IBGE/SIDRA (PAM):** Produção Agrícola Municipal (área, quantidade, valor).
-3.  **MAPA/ZARC:** Zoneamento de Risco Climático por município.
-4.  **CONAB:** Séries históricas de produção e indicadores de preços.
-5.  **MAPA/Agrofit:** Sistema de agrotóxicos fitossanitários.
-6.  **MAPA/SIPEAGRO:** Dados de estabelecimentos de fertilizantes.
-7.  **MAPA/SIGEF (Sementes):** Controle da produção de sementes e mudas.
-8.  **INMET:** Rede de estações meteorológicas (dados diários).
+1.  **MAPA/SNPC (CultivarWeb):** Registro Nacional de Cultivares (RNC). Fornece dados sobre variedades genéticas certificadas, mantenedores oficiais, portarias de registro e proteção de cultivares.
+2.  **IBGE/SIDRA (PAM):** Produção Agrícola Municipal. Séries anuais consolidadas sobre área plantada, área colhida, quantidade produzida e valor da produção para 60+ culturas temporárias e permanentes.
+3.  **MAPA/ZARC:** Zoneamento Agrícola de Risco Climático. Define as janelas de plantio ideais por município, cruzando tipos de solo (textura) e ciclos de cultivares para mitigar perdas climáticas.
+4.  **CONAB:** Séries históricas de produção, produtividade e preços médios pagos ao produtor, fundamentais para análises de mercado e viabilidade econômica de safras.
+5.  **MAPA/Agrofit:** Sistema de Agrotóxicos Fitossanitários. Base de dados sobre defensivos registrados no Brasil, incluindo alvos biológicos (pragas), formulações e orientações técnicas.
+6.  **MAPA/SIPEAGRO:** Registro de estabelecimentos produtores e importadores de fertilizantes, corretivos e inoculantes, mapeando a infraestrutura de insumos nutricionais.
+7.  **MAPA/SIGEF (Sementes):** Controle e fiscalização da produção de sementes e mudas, garantindo a rastreabilidade e a qualidade da tecnologia genética aplicada no campo.
+8.  **INMET (Meteorologia):** Rede de 700+ estações automáticas que fornecem indicadores diários de precipitação, temperatura e umidade para cruzamento com o desempenho das safras.
+
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -30,6 +35,8 @@ O pipeline extrai e processa dados das seguintes fontes:
 -   **Segurança:** SlowAPI (Rate Limiting)
 -   **Testes Automáticos:** Pytest
 -   **Infraestrutura:** Docker & Docker Compose
+-   **Big Data:** DuckDB (OLAP Engine), Apache Parquet (Formato Colunar)
+
 -   **CI/CD:** GitHub Actions
 
 ## 🏗️ Arquitetura do Projeto
@@ -38,6 +45,19 @@ O projeto segue uma arquitetura modular baseada em um modelo Estrela (Star Schem
 
 -   **Dimensões:** Cultura, Município, Mantenedor.
 -   **Fatos:** Cadastro de Cultivares, Produção PAM, Risco ZARC, Produção/Preços CONAB, Agrofit, Fertilizantes, SIGEF e Meteorologia INMET.
+
+## 📈 Escalabilidade e Big Data
+
+O AgroHarvest BR foi desenhado para lidar com volumes massivos de dados típicos do agronegócio (Bilhões de linhas) utilizando uma **Arquitetura Híbrida**:
+
+-   **Camada Relacional (PostgreSQL):** Gerencia metadados e entidades com alta integridade (Municípios, DimCultura, Estabelecimentos).
+-   **Camada de Analytics (Parquet + DuckDB):** Gerencia os dados massivos e imutáveis. Atualmente, o módulo **ZARC** processa mais de **196 milhões de registros** usando arquivos Parquet particionados por UF, garantindo consultas analíticas em milissegundos sem o custo de um banco de dados tradicional.
+
+### Expansão do ZARC
+Atualmente, o dataset de indicações foca em **Soja**. No entanto, a arquitetura é agnóstica a cultura:
+1.  **Novas Culturas:** É possível integrar Milho, Café, Arroz, etc., apenas adicionando os CSVs brutos do SISZARC na pasta `data/zarc/`.
+2.  **Novas Safras:** O motor de consulta (DuckDB) utiliza *Discovery* automático (`**/*.parquet`), integrando novas safras assim que processadas pelo pipeline.
+
 
 ### Estrutura de Diretórios
 

@@ -7,7 +7,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from api.routers import culturas, municipios, producao, insumos, clima, analytics
+from api.routers import culturas, municipios, producao, insumos, clima, analytics, zarc
 
 limiter = Limiter(key_func=get_remote_address, default_limits=["30 per minute"])
 
@@ -39,6 +39,7 @@ app.include_router(producao.router)
 app.include_router(insumos.router)
 app.include_router(clima.router)
 app.include_router(analytics.router)
+app.include_router(zarc.router)
 
 @app.get("/")
 def health_check():
