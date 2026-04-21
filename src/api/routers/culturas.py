@@ -14,9 +14,9 @@ def list_culturas(page: int = 1, page_size: int = 20, db: Session = Depends(get_
     query = db.query(DimCultura)
     return paginate_query(query, page, page_size)
 
-@router.get("/{id_cultura}", response_model=CulturaBaseSchema)
-def get_cultura(id_cultura: int, db: Session = Depends(get_session)):
-    cult = db.query(DimCultura).filter(DimCultura.id_cultura == id_cultura).first()
+@router.get("/{cultura}", response_model=CulturaBaseSchema)
+def get_cultura(cultura: str, db: Session = Depends(get_session)):
+    cult = db.query(DimCultura).filter(DimCultura.nome_padronizado == cultura.lower().strip()).first()
     if not cult:
         raise HTTPException(status_code=404, detail="Cultura não encontrada")
     return cult
