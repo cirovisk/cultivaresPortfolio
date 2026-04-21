@@ -77,9 +77,9 @@ class SigefProducaoSchema(BaseModel):
 
 class AgrofitSchema(BaseModel):
     id_agrofit: int
-    nr_registro: str
-    marca_comercial: str
-    classe: str
+    nr_registro: Optional[str] = None
+    marca_comercial: Optional[str] = None
+    classe: Optional[str] = None
     praga_comum: Optional[str] = None
     cultura: str
     
@@ -87,10 +87,10 @@ class AgrofitSchema(BaseModel):
 
 class FertilizanteSchema(BaseModel):
     id_fertilizante: int
-    uf: str
-    municipio: str
+    uf: Optional[str] = None
+    municipio: Optional[str] = None
     nr_registro_estabelecimento: str
-    razao_social: str
+    razao_social: Optional[str] = None
     area_atuacao: Optional[str] = None
     atividade: Optional[str] = None
     
