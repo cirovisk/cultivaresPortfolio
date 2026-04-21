@@ -33,30 +33,36 @@ def get_cultura_id(nome_cultura, mapping):
             return cid
     return None
 
-def upsert_data(model, df, index_elements):
+def upsert_data(model, df, index_elements, chunk_size=5000):
     if df.empty: return
-    
-    # Converte DF para dicts
-    records = df.to_dict(orient="records")
     
     # Filtra colunas que existem no modelo
     model_cols = [c.key for c in inspect(model).mapper.column_attrs]
-    valid_records = []
-    for r in records:
-        valid_records.append({k: v for k, v in r.items() if k in model_cols})
+    
+    for i in range(0, len(df), chunk_size):
+        chunk_df = df.iloc[i : i + chunk_size]
+        records = chunk_df.to_dict(orient="records")
+        
+        valid_records = []
+        for r in records:
+            # Converte NaN para None (SQL NULL) para evitar erros de tipo
+            valid_row = {k: (None if pd.isna(v) else v) for k, v in r.items() if k in model_cols}
+            valid_records.append(valid_row)
 
-    stmt = insert(model).values(valid_records)
-    
-    # Colunas para atualizar em caso de conflito (todas exceto as do índice)
-    update_cols = {c: stmt.excluded[c] for c in model_cols if c not in index_elements and c != 'data_modificacao'}
-    
-    upsert_stmt = stmt.on_conflict_do_update(
-        index_elements=index_elements,
-        set_=update_cols
-    )
-    
-    with engine.begin() as conn:
-        conn.execute(upsert_stmt)
+        if not valid_records: continue
+
+        stmt = insert(model).values(valid_records)
+        
+        # Colunas para atualizar em caso de conflito (todas exceto as do índice)
+        update_cols = {c: stmt.excluded[c] for c in model_cols if c not in index_elements and c != 'data_modificacao'}
+        
+        upsert_stmt = stmt.on_conflict_do_update(
+            index_elements=index_elements,
+            set_=update_cols
+        )
+        
+        with engine.begin() as conn:
+            conn.execute(upsert_stmt)
 
 def preencher_dimensao_cultura(db, culturas_lista):
     culturas_map = {}
@@ -162,7 +168,7 @@ def load_fact_cultivares(db, df, map_cult, map_mant):
     df_f["id_cultura"] = df_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
     df_f["id_mantenedor"] = df_f["mantenedor"].map(map_mant)
     cols = ["nr_registro", "id_cultura", "id_mantenedor", "cultivar", "nome_secundario", "situacao", "nr_formulario", "data_reg", "data_val"]
-    df_f = df_f[[c for c in cols if c in df_f.columns]].drop_duplicates(subset=["nr_registro"]).dropna(subset=["cultivar"])
+    df_f = df_f[[c for c in cols if c in df_f.columns]].drop_duplicates(subset=["nr_registro"]).dropna(subset=["cultivar", "id_cultura"])
     upsert_data(FatoCultivar, df_f, index_elements=['nr_registro'])
     log.info(f"Fato Cultivares: {len(df_f)} registros upserted.")
 
@@ -177,7 +183,19 @@ def load_fact_pam(db, df, map_cult, map_mun):
     upsert_data(FatoProducaoPAM, df_f, index_elements=['id_cultura', 'id_municipio', 'ano'])
     log.info(f"Fato PAM: {len(df_f)} registros upserted.")
 
-def load_fact_zarc(db, df, map_cult, map_mun):
+def load_fact_zarc(db, data, map_cult, map_mun):
+    """
+    Recebe um DataFrame ou um Gerador de DataFrames (Chunks).
+    """
+    if data is None: return
+    
+    # Se for um gerador, processa cada chunk
+    if not isinstance(data, pd.DataFrame):
+        for chunk in data:
+            load_fact_zarc(db, chunk, map_cult, map_mun)
+        return
+
+    df = data
     if df.empty: return
     df_f = df.copy()
     df_f["id_cultura"] = df_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))

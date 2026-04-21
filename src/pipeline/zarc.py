@@ -8,7 +8,16 @@ from .base_extractor import BaseExtractor
 class ZarcExtractor(BaseExtractor):
     """
     Extrator ZARC: Zoneamento Agrícola de Risco Climático (MAPA).
-    Tabelas de risco por solo e decêndio com suporte a cache.
+    
+    ESTRATÉGIAS DE OTIMIZAÇÃO PARA GRANDES VOLUMES:
+    1. Streaming de Dados: Implementado via geradores (yield) para evitar o carregamento 
+       de arquivos de múltiplos gigabytes na memória RAM.
+    2. Processamento em Chunks: Utiliza a funcionalidade 'chunksize' do Pandas para 
+       fatiar a leitura do CSV em blocos controlados (ex: 50k linhas).
+    3. Detecção de Compressão: Identifica arquivos Gzip através da leitura de Magic Bytes 
+       iniciais (b'\\x1f\\x8b'), garantindo a descompressão mesmo em arquivos com extensão .csv.
+    4. Carga Seletiva: Método de extração de municípios lê apenas as colunas geográficas 
+       necessárias, reduzindo drasticamente o overhead de I/O.
     """
 
     TARGET_CROPS = ["soja", "milho", "trigo", "algodao", "cana-de-acucar"]
@@ -19,56 +28,65 @@ class ZarcExtractor(BaseExtractor):
         self.data_dir = Path(data_dir).resolve()
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
-    def extract(self) -> pd.DataFrame:
-        all_dfs = []
-        
+    def extract(self, chunksize=50000):
+        """
+        Gera chunks de DataFrames para processamento sequencial.
+        """
         for crop in self.TARGET_CROPS:
             cache_file = self.data_dir / f"zarc_{crop}.csv"
             
-            # Smart Refresh Logic
-            if self.use_cache and cache_file.exists() and not self.is_file_stale(str(cache_file), 30):
-                self.log.info(f"Usando cache ZARC para {crop}...")
-                all_dfs.append(pd.read_csv(cache_file, sep=';', encoding='utf-8', on_bad_lines='skip', compression='gzip'))
+            if cache_file.exists():
+                self.log.info(f"Iniciando streaming ZARC: {crop}")
+                try:
+                    with open(cache_file, "rb") as f:
+                        is_gzip = f.read(2) == b'\x1f\x8b'
+
+                    reader = pd.read_csv(
+                        cache_file, 
+                        sep=';', 
+                        encoding='utf-8', 
+                        on_bad_lines='skip', 
+                        compression='gzip' if is_gzip else None, 
+                        chunksize=chunksize,
+                    )
+                    for chunk in reader:
+                        chunk["cultura_raw"] = crop
+                        yield chunk
+                except Exception as e:
+                    self.log.error(f"Erro no processamento de chunk ({crop}): {e}")
+            else:
+                self.log.warning(f"Cache não encontrado para {crop}. Pule para próxima fonte.")
                 continue
 
-            self.log.info(f"Buscando recurso ZARC no CKAN para: {crop}")
-            query = f'title:zarc AND ({crop} OR {crop.capitalize()})'
-            ckan_url = f"https://dados.agricultura.gov.br/api/3/action/package_search?q={query}&rows=1"
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-            
-            try:
-                resp = requests.get(ckan_url, headers=headers, timeout=20)
-                if resp.status_code == 200:
-                    results = resp.json().get("result", {}).get("results", [])
-                    if results:
-                        csv_url = None
-                        for resource in results[0].get("resources", []):
-                            if resource.get("format", "").upper() in ["CSV", "CSV.GZ", "GZ"]:
-                                csv_url = resource.get("url")
-                                break
-                                
-                        if csv_url:
-                            resp_csv = requests.get(csv_url, headers=headers, timeout=60)
-                            resp_csv.raise_for_status()
-                            
-                            with open(cache_file, "wb") as f:
-                                f.write(resp_csv.content)
-                                
-                            df_crop = pd.read_csv(
-                                io.BytesIO(resp_csv.content), 
-                                sep=';', 
-                                encoding='utf-8', 
-                                on_bad_lines='skip', 
-                                compression='infer'
-                            )
-                            df_crop["cultura_raw"] = crop
-                            all_dfs.append(df_crop)
-            except Exception as e:
-                self.log.error(f"Erro ao buscar ZARC para {crop}: {e}")
-                if cache_file.exists():
-                    all_dfs.append(pd.read_csv(cache_file, sep=';', encoding='utf-8', compression='gzip'))
-
-        if not all_dfs:
-            return pd.DataFrame()
-            
-        return pd.concat(all_dfs, ignore_index=True)
+    def get_municipios_only(self):
+        """
+        Extrai municípios únicos utilizando leitura parcial de colunas para economia de RAM.
+        """
+        unique_muns = []
+        for crop in self.TARGET_CROPS:
+            cache_file = self.data_dir / f"zarc_{crop}.csv"
+            if cache_file.exists():
+                self.log.info(f"Extraindo metadados geográficos: {crop}")
+                try:
+                    with open(cache_file, "rb") as f:
+                        is_gzip = f.read(2) == b'\x1f\x8b'
+                    
+                    # Carrega apenas o cabeçalho para validar colunas
+                    header_check = pd.read_csv(cache_file, sep=';', nrows=0, compression='gzip' if is_gzip else None)
+                    use_cols = ["cod_municipio_ibge", "municipio", "uf"] if "cod_municipio_ibge" in header_check.columns else ["UF"]
+                    
+                    reader = pd.read_csv(
+                        cache_file, 
+                        sep=';', 
+                        usecols=use_cols,
+                        compression='gzip' if is_gzip else None, 
+                        chunksize=100000
+                    )
+                    for chunk in reader:
+                        if "cod_municipio_ibge" in chunk.columns:
+                            unique_muns.append(chunk[["cod_municipio_ibge", "municipio", "uf"]].drop_duplicates())
+                except Exception as e:
+                    self.log.error(f"Erro na extração seletiva de municípios ({crop}): {e}")
+        
+        if not unique_muns: return pd.DataFrame()
+        return pd.concat(unique_muns).drop_duplicates(subset=["cod_municipio_ibge"])

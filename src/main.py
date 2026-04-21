@@ -1,7 +1,7 @@
 import argparse
 import logging
-import concurrent.futures
 import pandas as pd
+import gc
 from pipeline.cultivares import CultivaresExtractor
 from pipeline.sidra import SidraExtractor
 from pipeline.zarc import ZarcExtractor
@@ -18,6 +18,15 @@ from pipeline.loaders import (
     load_fact_fertilizantes, load_fact_sigef, load_fact_meteorologia
 )
 
+from pipeline.cleaners.conab import clean_conab
+from pipeline.cleaners.sigef import clean_sigef
+from pipeline.cleaners.cultivares import clean_cultivares
+from pipeline.cleaners.sidra import clean_sidra
+from pipeline.cleaners.zarc import clean_zarc
+from pipeline.cleaners.agrofit import clean_agrofit
+from pipeline.cleaners.fertilizantes import clean_fertilizantes
+from pipeline.cleaners.inmet import clean_inmet
+
 EXTRACTORS = {
     "cultivares": CultivaresExtractor,
     "sidra": SidraExtractor,
@@ -29,120 +38,140 @@ EXTRACTORS = {
     "inmet": InmetExtractor
 }
 
+CLEANERS = {
+    "cultivares": clean_cultivares,
+    "sidra": clean_sidra,
+    "zarc": clean_zarc,
+    "conab": clean_conab,
+    "agrofit": clean_agrofit,
+    "fertilizantes": clean_fertilizantes,
+    "sigef": clean_sigef,
+    "inmet": clean_inmet
+}
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-
-def main():
-    parser = argparse.ArgumentParser(description="Pipeline Agro-Dados")
-    parser.add_argument("--sources", nargs="+", choices=EXTRACTORS.keys(), default=list(EXTRACTORS.keys()), help="Fontes de dados a serem extraídas")
-    parser.add_argument("--refresh-conab", action="store_true", help="Força o download dos arquivos CONAB")
-    args = parser.parse_args()
-
-    log.info("--- Iniciando Orquestração do Pipeline Agro ---")
-    log.info(f"Fontes selecionadas: {args.sources}")
-    init_db()
-    db = next(get_db())
-
-    
-    culturas_alvo = ["soja", "milho", "trigo", "algodão", "cana-de-açúcar"]
-    
-    # ETL: Instanciação
-    instances = {}
-    for source in args.sources:
-        if source == "cultivares":
-            instances[source] = CultivaresExtractor(use_cache=True)
-        elif source == "sidra":
-            ext = SidraExtractor(ano="2022")
-            ext.TARGET_CROPS = {k: ext.TARGET_CROPS[k] for k in culturas_alvo if k in ext.TARGET_CROPS}
-            instances[source] = ext
-        elif source == "zarc":
-            ext = ZarcExtractor()
-            ext.TARGET_CROPS = [c.replace("ç", "c").replace("ã", "a") for c in culturas_alvo]
-            instances[source] = ext
-        elif source == "conab":
-            instances[source] = ConabExtractor(force_refresh=args.refresh_conab)
-        elif source == "agrofit":
-            instances[source] = AgrofitExtractor()
-        elif source == "fertilizantes":
-            instances[source] = FertilizantesExtractor()
-        elif source == "sigef":
-            instances[source] = SigefExtractor()
-        elif source == "inmet":
-            instances[source] = InmetExtractor(days_history=730)
-
-    # Extração e Limpeza: Processamento paralelo Funcional
-    log.info("Executando extrações e limpezas em cadeia paralela...")
-    dfs = {}
-    
-    from pipeline.cleaners.conab import clean_conab
-    from pipeline.cleaners.sigef import clean_sigef
-    from pipeline.cleaners.cultivares import clean_cultivares
-    from pipeline.cleaners.sidra import clean_sidra
-    from pipeline.cleaners.zarc import clean_zarc
-    from pipeline.cleaners.agrofit import clean_agrofit
-    from pipeline.cleaners.fertilizantes import clean_fertilizantes
-    from pipeline.cleaners.inmet import clean_inmet
-
-    CLEANERS = {
-        "cultivares": clean_cultivares,
-        "sidra": clean_sidra,
-        "zarc": clean_zarc,
-        "conab": clean_conab,
-        "agrofit": clean_agrofit,
-        "fertilizantes": clean_fertilizantes,
-        "sigef": clean_sigef,
-        "inmet": clean_inmet
-    }
-
-    def pipeline_task(source_name, ext_instance):
-        if source_name == "inmet":
-            return pd.DataFrame()
-            
+def run_step(source_name, ext_instance):
+    """Executa extração e limpeza para uma única fonte."""
+    log.info(f"Processando fonte: [{source_name}]")
+    try:
         raw_data = ext_instance.extract()
         cleaner_func = CLEANERS.get(source_name)
         if cleaner_func:
-            return cleaner_func(raw_data)
-        return raw_data
+            df = cleaner_func(raw_data)
+        else:
+            df = raw_data
+        return df
+    except Exception as e:
+        log.error(f"Erro ao processar [{source_name}]: {e}")
+        return pd.DataFrame()
 
-    if instances:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(instances)) as executor:
-            future_to_source = {
-                executor.submit(pipeline_task, source, ext): source 
-                for source, ext in instances.items()
-            }
-            for future in concurrent.futures.as_completed(future_to_source):
-                source = future_to_source[future]
-                try:
-                    dfs[source] = future.result()
-                    log.info(f"Pipeline Módulo [{source}] finalizado com sucesso.")
-                except Exception as exc:
-                    log.error(f"Pipeline Módulo [{source}] gerou erro (I/O ou Limpeza): {exc}")
-                    dfs[source] = pd.DataFrame()
+def main():
+    parser = argparse.ArgumentParser(description="Pipeline Agro-Dados (Otimizado)")
+    parser.add_argument("--sources", nargs="+", choices=EXTRACTORS.keys(), default=list(EXTRACTORS.keys()), help="Fontes de dados")
+    parser.add_argument("--refresh-conab", action="store_true", help="Força download CONAB")
+    args = parser.parse_args()
 
-    # DML: Carga de dimensões
-    log.info("Carregando Dimensões...")
+    log.info("--- Iniciando Orquestração do Pipeline Agro (Serial & Low Memory) ---")
+    init_db()
+    db = next(get_db())
+
+    culturas_alvo = ["soja", "milho", "trigo", "algodão", "cana-de-açúcar"]
+    
+    # 1. DimCultura (Sempre primeiro)
     map_cult = preencher_dimensao_cultura(db, culturas_alvo)
-    map_mant = preencher_dimensao_mantenedor(db, dfs.get("cultivares", pd.DataFrame()))
-    map_mun, map_mun_name = preencher_dimensao_municipio(db, dfs.get("sidra", pd.DataFrame()), dfs.get("zarc", pd.DataFrame()))
-    
-    # DML: Carga de fatos
-    log.info("Carregando Tabelas Fato...")
-    
-    if "cultivares" in dfs: load_fact_cultivares(db, dfs["cultivares"], map_cult, map_mant)
-    if "sidra" in dfs: load_fact_pam(db, dfs["sidra"], map_cult, map_mun)
-    if "zarc" in dfs: load_fact_zarc(db, dfs["zarc"], map_cult, map_mun)
-    if "conab" in dfs: load_fact_conab(db, dfs["conab"], map_cult, map_mun)
-    if "agrofit" in dfs: load_fact_agrofit(db, dfs["agrofit"], map_cult)
-    if "fertilizantes" in dfs: load_fact_fertilizantes(db, dfs["fertilizantes"], map_mun_name)
-    if "sigef" in dfs: load_fact_sigef(db, dfs["sigef"], map_cult, map_mun_name)
-    
-    if "inmet" in instances and "inmet" in args.sources:
-        all_muns = db.query(DimMunicipio).all()
-        # Nota: load_fact_meteorologia faz o run interno se necessário
-        load_fact_meteorologia(db, pd.DataFrame(), instances["inmet"], all_muns)
 
-    log.info("--- Pipeline Concluído ---")
+    # 2. Dimensões e Fatos Dependentes (Cultivares, SIDRA, ZARC)
+    # Estas fontes são processadas juntas ou em ordem para alimentar DimMunicipio / DimMantenedor
+    
+    # --- CULTIVARES ---
+    df_cult = pd.DataFrame()
+    if "cultivares" in args.sources:
+        df_cult = run_step("cultivares", CultivaresExtractor(use_cache=True))
+        map_mant = preencher_dimensao_mantenedor(db, df_cult)
+        load_fact_cultivares(db, df_cult, map_cult, map_mant)
+        del df_cult
+        gc.collect()
+
+    # --- SIDRA e ZARC (Populam DimMunicipio) ---
+    df_sidra = pd.DataFrame()
+    if "sidra" in args.sources:
+        ext = SidraExtractor(ano="2022")
+        ext.TARGET_CROPS = {k: ext.TARGET_CROPS[k] for k in culturas_alvo if k in ext.TARGET_CROPS}
+        df_sidra = run_step("sidra", ext)
+
+    df_zarc_muns = pd.DataFrame()
+    zarc_gen = None
+    if "zarc" in args.sources:
+        ext_zarc = ZarcExtractor()
+        ext_zarc.TARGET_CROPS = [c.replace("ç", "c").replace("ã", "a") for c in culturas_alvo]
+        df_zarc_muns = ext_zarc.get_municipios_only()
+        # Preparamos o gerador para os fatos, mas não o consumimos ainda
+        zarc_gen = ext_zarc.extract()
+
+    if not df_sidra.empty or not df_zarc_muns.empty:
+        log.info("Populando DimMunicipio...")
+        map_mun, map_mun_name = preencher_dimensao_municipio(db, df_sidra, df_zarc_muns)
+        
+        if not df_sidra.empty:
+            load_fact_pam(db, df_sidra, map_cult, map_mun)
+            del df_sidra
+        
+        if zarc_gen:
+            log.info("Carregando Fatos ZARC via Streaming...")
+            load_fact_zarc(db, zarc_gen, map_cult, map_mun)
+            # Geradores são consumidos, não precisam de del df manual, mas ajuda o GC
+            del zarc_gen
+        
+        gc.collect()
+    else:
+        # Se não processou sidra/zarc nesta rodada, apenas carrega o mapeamento existente
+        log.info("Carregando mapeamento de municípios existente...")
+        map_mun, map_mun_name = {}, {} # Serão populados sob demanda se outras fontes precisarem
+        # Nota: As loaders abaixo já lidam com o mun_map. Se estiver vazio, elas podem falhar no mapping.
+        # Idealmente preencher_dimensao_municipio deveria ser capaz de retornar o mapa do que já existe.
+        map_mun, map_mun_name = preencher_dimensao_municipio(db)
+
+    # 3. Outras Fontes (Sequencial)
+    
+    # --- CONAB ---
+    if "conab" in args.sources:
+        df_conab = run_step("conab", ConabExtractor(force_refresh=args.refresh_conab))
+        load_fact_conab(db, df_conab, map_cult, map_mun)
+        del df_conab
+        gc.collect()
+
+    # --- AGROFIT (A mais pesada) ---
+    if "agrofit" in args.sources:
+        df_agrofit = run_step("agrofit", AgrofitExtractor())
+        load_fact_agrofit(db, df_agrofit, map_cult)
+        del df_agrofit
+        gc.collect()
+
+    # --- FERTILIZANTES ---
+    if "fertilizantes" in args.sources:
+        df_fert = run_step("fertilizantes", FertilizantesExtractor())
+        load_fact_fertilizantes(db, df_fert, map_mun_name)
+        del df_fert
+        gc.collect()
+
+    # --- SIGEF ---
+    if "sigef" in args.sources:
+        df_sigef = run_step("sigef", SigefExtractor())
+        load_fact_sigef(db, df_sigef, map_cult, map_mun_name)
+        del df_sigef
+        gc.collect()
+
+    # --- INMET ---
+    if "inmet" in args.sources:
+        log.info("Processando Meteorologia...")
+        all_muns = db.query(DimMunicipio).all()
+        ext_inmet = InmetExtractor(days_history=730)
+        load_fact_meteorologia(db, pd.DataFrame(), ext_inmet, all_muns)
+        gc.collect()
+
+    log.info("--- Pipeline Concluído com Sucesso ---")
 
 if __name__ == "__main__":
     main()

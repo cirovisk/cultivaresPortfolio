@@ -10,7 +10,12 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./docs/setup_api_reader.sql:/docker-entrypoint-initdb.d/01_setup_api_reader.sql:ro
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   app:
     build:
@@ -24,6 +29,10 @@ services:
       - PYTHONPATH=/app/src
     depends_on:
       - postgres
+    deploy:
+      resources:
+        limits:
+          memory: 4G
 
   test:
     build:
@@ -57,6 +66,10 @@ services:
     depends_on:
       - postgres
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
 volumes:
   pgdata:
