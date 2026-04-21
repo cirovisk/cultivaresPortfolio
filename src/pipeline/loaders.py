@@ -184,6 +184,13 @@ def carregar_municipios_completo_ibge(db):
 def preencher_dimensao_municipio(db, df_pam=pd.DataFrame(), df_zarc=pd.DataFrame()):
     mun_map_ibge = {}
     mun_map_name = {}
+    
+    db_muns = db.query(DimMunicipio).all()
+    for m in db_muns:
+        mun_map_ibge[m.codigo_ibge] = m.id_municipio
+        if m.uf:
+            mun_map_name[(m.nome.lower().strip(), m.uf)] = m.id_municipio
+
     novos_objetos = []
 
     # 1. PAM
@@ -269,6 +276,10 @@ def load_fact_zarc(db, data, map_cult, map_mun):
     if df.empty: return
     df_f = df.copy()
     df_f["id_cultura"] = df_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
+    
+    if "cod_municipio_ibge" not in df_f.columns:
+        return
+        
     df_f["cod_municipio_ibge"] = df_f["cod_municipio_ibge"].astype(str).str[:7]
     df_f["id_municipio"] = df_f["cod_municipio_ibge"].map(map_mun)
     renames = {"solo": "tipo_solo", "decendio": "periodo_plantio", "periodo": "periodo_plantio", "risco": "risco_climatico"}
@@ -350,7 +361,6 @@ def load_fact_sigef(db, df_dict, map_cult, map_mun_name):
         log.info(f"Fato SIGEF ({key}): Upsert concluído.")
 
 def load_fact_meteorologia(db, df, extractor, all_muns):
-    if df.empty: return
     stations_df = extractor.get_stations()
     stations_df["name_norm"] = stations_df["DC_NOME"].str.lower().str.strip()
     

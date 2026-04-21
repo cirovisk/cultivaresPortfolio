@@ -86,81 +86,127 @@ def main():
     # 2. Dimensões baseadas em Município (Sempre garantindo carga completa primeiro)
     map_mun, map_mun_name = carregar_municipios_completo_ibge(db)
 
+    success_sources = []
+    failed_sources = []
+
     # 3. Cultivares (Depende de Mantenedor)
-    df_cult = pd.DataFrame()
     if "cultivares" in args.sources:
-        df_cult = run_step("cultivares", CultivaresExtractor(use_cache=True))
-        map_mant = preencher_dimensao_mantenedor(db, df_cult)
-        load_fact_cultivares(db, df_cult, map_cult, map_mant)
-        del df_cult
-        gc.collect()
+        try:
+            df_cult = run_step("cultivares", CultivaresExtractor(use_cache=True))
+            map_mant = preencher_dimensao_mantenedor(db, df_cult)
+            load_fact_cultivares(db, df_cult, map_cult, map_mant)
+            del df_cult
+            success_sources.append("cultivares")
+        except Exception as e:
+            log.error(f"Falha isolada em cultivares: {e}")
+            failed_sources.append("cultivares")
+        finally:
+            gc.collect()
 
-    # --- SIDRA e ZARC (Populam DimMunicipio) ---
-    df_sidra = pd.DataFrame()
+    # --- SIDRA ---
     if "sidra" in args.sources:
-        ext = SidraExtractor()
-        ext.TARGET_CROPS = {k: ext.TARGET_CROPS[k] for k in culturas_alvo if k in ext.TARGET_CROPS}
-        df_sidra = run_step("sidra", ext)
-
-    df_zarc_muns = pd.DataFrame()
-    zarc_gen = None
-    if "zarc" in args.sources:
-        ext_zarc = ZarcExtractor()
-        ext_zarc.TARGET_CROPS = [c.replace("ç", "c").replace("ã", "a") for c in culturas_alvo]
-        df_zarc_muns = ext_zarc.get_municipios_only()
-        zarc_gen = ext_zarc.extract()
-
-    if not df_sidra.empty or zarc_gen:
-        if not df_sidra.empty:
-            load_fact_pam(db, df_sidra, map_cult, map_mun)
+        try:
+            ext = SidraExtractor()
+            ext.TARGET_CROPS = {k: ext.TARGET_CROPS[k] for k in culturas_alvo if k in ext.TARGET_CROPS}
+            df_sidra = run_step("sidra", ext)
+            if not df_sidra.empty:
+                load_fact_pam(db, df_sidra, map_cult, map_mun)
             del df_sidra
-        
-        if zarc_gen:
-            log.info("Carregando Fatos ZARC via Streaming...")
-            load_fact_zarc(db, zarc_gen, map_cult, map_mun)
-            del zarc_gen
-        
-        gc.collect()
+            success_sources.append("sidra")
+        except Exception as e:
+            log.error(f"Falha isolada em sidra: {e}")
+            failed_sources.append("sidra")
+        finally:
+            gc.collect()
 
-    # 3. Outras Fontes (Sequencial)
-    
+    # --- ZARC ---
+    if "zarc" in args.sources:
+        try:
+            ext_zarc = ZarcExtractor()
+            ext_zarc.TARGET_CROPS = [c.replace("ç", "c").replace("ã", "a") for c in culturas_alvo]
+            df_zarc_muns = ext_zarc.get_municipios_only()
+            zarc_gen = ext_zarc.extract()
+            if zarc_gen:
+                log.info("Carregando Fatos ZARC via Streaming...")
+                load_fact_zarc(db, zarc_gen, map_cult, map_mun)
+            del zarc_gen
+            success_sources.append("zarc")
+        except Exception as e:
+            log.error(f"Falha isolada em zarc: {e}")
+            failed_sources.append("zarc")
+        finally:
+            gc.collect()
+
     # --- CONAB ---
     if "conab" in args.sources:
-        df_conab = run_step("conab", ConabExtractor(force_refresh=args.refresh_conab))
-        load_fact_conab(db, df_conab, map_cult, map_mun)
-        del df_conab
-        gc.collect()
+        try:
+            df_conab = run_step("conab", ConabExtractor(force_refresh=args.refresh_conab))
+            load_fact_conab(db, df_conab, map_cult, map_mun)
+            del df_conab
+            success_sources.append("conab")
+        except Exception as e:
+            log.error(f"Falha isolada em conab: {e}")
+            failed_sources.append("conab")
+        finally:
+            gc.collect()
 
     # --- AGROFIT (A mais pesada) ---
     if "agrofit" in args.sources:
-        df_agrofit = run_step("agrofit", AgrofitExtractor())
-        load_fact_agrofit(db, df_agrofit, map_cult)
-        del df_agrofit
-        gc.collect()
+        try:
+            df_agrofit = run_step("agrofit", AgrofitExtractor())
+            load_fact_agrofit(db, df_agrofit, map_cult)
+            del df_agrofit
+            success_sources.append("agrofit")
+        except Exception as e:
+            log.error(f"Falha isolada em agrofit: {e}")
+            failed_sources.append("agrofit")
+        finally:
+            gc.collect()
 
     # --- FERTILIZANTES ---
     if "fertilizantes" in args.sources:
-        df_fert = run_step("fertilizantes", FertilizantesExtractor())
-        load_fact_fertilizantes(db, df_fert, map_mun_name)
-        del df_fert
-        gc.collect()
+        try:
+            df_fert = run_step("fertilizantes", FertilizantesExtractor())
+            load_fact_fertilizantes(db, df_fert, map_mun_name)
+            del df_fert
+            success_sources.append("fertilizantes")
+        except Exception as e:
+            log.error(f"Falha isolada em fertilizantes: {e}")
+            failed_sources.append("fertilizantes")
+        finally:
+            gc.collect()
 
     # --- SIGEF ---
     if "sigef" in args.sources:
-        df_sigef = run_step("sigef", SigefExtractor())
-        load_fact_sigef(db, df_sigef, map_cult, map_mun_name)
-        del df_sigef
-        gc.collect()
+        try:
+            df_sigef = run_step("sigef", SigefExtractor())
+            load_fact_sigef(db, df_sigef, map_cult, map_mun_name)
+            del df_sigef
+            success_sources.append("sigef")
+        except Exception as e:
+            log.error(f"Falha isolada em sigef: {e}")
+            failed_sources.append("sigef")
+        finally:
+            gc.collect()
 
     # --- INMET ---
     if "inmet" in args.sources:
-        log.info("Processando Meteorologia...")
-        all_muns = db.query(DimMunicipio).all()
-        ext_inmet = InmetExtractor(days_history=730)
-        load_fact_meteorologia(db, pd.DataFrame(), ext_inmet, all_muns)
-        gc.collect()
+        try:
+            log.info("Processando Meteorologia...")
+            all_muns = db.query(DimMunicipio).all()
+            ext_inmet = InmetExtractor(days_history=730)
+            load_fact_meteorologia(db, pd.DataFrame(), ext_inmet, all_muns)
+            success_sources.append("inmet")
+        except Exception as e:
+            log.error(f"Falha isolada em inmet: {e}")
+            failed_sources.append("inmet")
+        finally:
+            gc.collect()
 
-    log.info("--- Pipeline Concluído com Sucesso ---")
+    log.info(f"--- Pipeline Concluído ---")
+    log.info(f"Sucesso: {success_sources}")
+    if failed_sources:
+        log.warning(f"Falhas: {failed_sources}")
 
 if __name__ == "__main__":
     main()

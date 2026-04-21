@@ -11,11 +11,11 @@ class SidraExtractor(BaseExtractor):
     """
 
     TARGET_CROPS = {
-        "soja": 40280,
-        "milho": 39444, # Pode variar (milho na grão)
-        "trigo": 40307,
-        "algodão": 39433, # algodão herbácio
-        "cana-de-açúcar": 39441
+        "soja": 40124,
+        "milho": 40122,
+        "trigo": 40127,
+        "algodão": 40100,
+        "cana-de-açúcar": 40111
     }
 
     def __init__(self, ano: str = "2021", data_dir: str = "data/sidra", use_cache: bool = True):
@@ -30,15 +30,15 @@ class SidraExtractor(BaseExtractor):
         """
         Metadados: Consulta de IDs de categoria no IBGE.
         """
-        self.log.info("Buscando metadados da tabela 1612 no IBGE...")
-        url = "https://servicodados.ibge.gov.br/api/v3/agregados/1612/metadados"
+        self.log.info("Buscando metadados da tabela 5457 no IBGE...")
+        url = "https://servicodados.ibge.gov.br/api/v3/agregados/5457/metadados"
         metadata_map = {}
         try:
             resp = requests.get(url, timeout=15)
             resp.raise_for_status()
             data = resp.json()
             for cls in data.get("classificacoes", []):
-                if cls["id"] == "81":
+                if cls["id"] == "782":
                     for cat in cls.get("categorias", []):
                         name_norm = normalize_string(pd.Series([cat["nome"]])).iloc[0]
                         # Normalização: Remoção de sufixos (ex: "em grão")
@@ -71,12 +71,12 @@ class SidraExtractor(BaseExtractor):
         crops_ids = self._map_culture_ids()
         all_dfs = []
         
-        # Variáveis: 109 (Área Plantada), 216 (Área Colhida), 214 (Produção)
-        variables = "109,216,214"
+        # Variáveis Tabela 5457: 8331 (Área Plantada), 216 (Área Colhida), 214 (Produção), 215 (Valor da Produção)
+        variables = "8331,216,214,215"
         
         for crop_name, crop_id in crops_ids.items():
             self.log.info(f"Buscando dados IBGE para {crop_name} (ID: {crop_id})")
-            url = f"https://apisidra.ibge.gov.br/values/t/1612/n6/all/v/{variables}/p/{self.ano}/c81/{crop_id}"
+            url = f"https://apisidra.ibge.gov.br/values/t/5457/n6/all/v/{variables}/p/{self.ano}/c782/{crop_id}"
             
             try:
                 resp = requests.get(url, timeout=30)
