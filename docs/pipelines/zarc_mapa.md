@@ -23,3 +23,22 @@ Diferente dos outros pipelines, o ZARC não reside no PostgreSQL. O acesso é fe
 ## 💾 Armazenamento (Camada Gold)
 - **Parquet:** `data/parquet/zarc_indicacoes` e `data/parquet/zarc_risco`.
 - **Híbrido:** Metadados e tabelas auxiliares permanecem no **PostgreSQL** para integridade referencial.
+
+## 📥 Guia de Expansão: Como baixar outras culturas
+Atualmente, o projeto contém dados de **Soja** (Indicações) e **Trigo/Algodão** (Risco 25/26). Para adicionar o ZARC de outras culturas (Milho, Feijão, Arroz, etc.), siga estes passos:
+
+### 1. Acessar o Portal de Dados Abertos
+Vá para o dataset oficial do MAPA:
+- **[Portal de Dados Abertos - SISZARC](https://dados.agricultura.gov.br/dataset/siszarc-sistemas-de-zoneamento-agricola-e-risco-climatico)**
+
+### 2. Escolher o Tipo de Dados
+- **Indicação:** Escolha o recurso "Dados Abertos - Indicação de Cultivares por Safra" (Geralmente arquivos CSV.GZ de ~1.3GB).
+- **Risco:** Escolha o recurso "Dados Abertos - Tábua de Risco" (Arquivos CSV por Safra).
+
+### 3. Integração no Pipeline
+1.  Baixe o arquivo CSV da cultura/safra desejada.
+2.  Mova-o para a pasta `/data/zarc/` no projeto.
+3.  No arquivo `src/scripts/process_zarc_full.py`, adicione o nome do novo arquivo no dicionário `EXTRA_FILES`.
+4.  Execute a conversão: `docker-compose run --rm app python src/scripts/process_zarc_full.py`.
+
+O sistema irá gerar as novas partições Parquet automaticamente e o endpoint `/analytics/raio-x-municipal` passará a enxergar esses dados instantaneamente.
