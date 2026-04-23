@@ -1,7 +1,6 @@
 # AgroHarvest BR - Pipeline de Dados Agrícolas
 
 ## 🏗️ Arquitetura do Sistema
-![Arquitetura Unificada - AgroHarvest BR](./assets/architecture_diagram_v2.png)
 
 Este projeto é uma solução de **Engenharia de Dados** focada na integração de múltiplos datasets do setor agrícola brasileiro.
  Ele consolida informações de registros de cultivares (RNC), produção agrícola municipal (PAM) e zoneamento de risco climático (ZARC) em um data warehouse estruturado.
