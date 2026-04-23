@@ -55,7 +55,8 @@ A documentação visual completa pode ser encontrada em: **[ARCHITECTURE_VISUAL.
 ├── docker/                 # Configurações Docker
 │   └── app.Dockerfile      # Imagem única para ETL, API e Testes
 ├── docs/                   # Documentação técnica e schemas
-│   └── ARCHITECTURE_VISUAL.md # Diagramas ERD e Fluxo de Dados
+│   ├── ARCHITECTURE_VISUAL.md # Diagramas ERD e Fluxo de Dados
+│   └── DATABASE_METADATA.md   # Dicionário de dados do banco
 ├── src/                    # Código-fonte (Python root via PYTHONPATH)
 │   ├── api/           # Camada de API (Endpoints, Routers, Schemas)
 │   ├── db/            # Modelagem Star Schema (SQLAlchemy)
@@ -63,8 +64,7 @@ A documentação visual completa pode ser encontrada em: **[ARCHITECTURE_VISUAL.
 │   │   └── cleaners/  # Lógica de limpeza desacoplada (Funcional)
 │   └── main.py        # Orquestrador do pipeline de dados
 ├── tests/              # Suite de testes (Unitários e Integração API)
-├── docker-compose.yml  # Orquestração de serviços (app, api, test)
-└── DATABASE_METADATA.md # Dicionário de dados do banco
+└── docker-compose.yml  # Orquestração de serviços (app, api, test)
 ```
 </details>
 
