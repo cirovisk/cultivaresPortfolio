@@ -12,6 +12,12 @@ Este projeto é uma solução de **Engenharia de Dados** focada na integração 
 
 O objetivo principal é criar um ambiente unificado para análise de dados agro, permitindo correlacionar a oferta de tecnologias (cultivares registradas) com o desempenho produtivo (IBGE/SIDRA) e a viabilidade climática (MAPA/ZARC). O projeto foi concebido para ser escalável, com a visão de integrar diversas outras fontes de dados governamentais e privadas no futuro.
 
+## 🖥️ Dashboard - Visualização de Dados
+
+![Dashboard AgroHarvest](./assets/dashboard.webm)
+
+*Visualização analítica consolidada no Metabase, integrando fluxos de produção (PAM), viabilidade climática (ZARC) e registros genéticos (RNC/SIGEF).*
+
 ## 📊 Fontes de Dados
 
 O pipeline extrai e processa dados das seguintes fontes:
@@ -35,6 +41,7 @@ O pipeline extrai e processa dados das seguintes fontes:
 -   **Segurança:** SlowAPI (Rate Limiting)
 -   **Testes Automáticos:** Pytest
 -   **Infraestrutura:** Docker & Docker Compose
+-   **BI/Dashboard:** Metabase
 -   **CI/CD:** GitHub Actions
 
 ## 🏗️ Arquitetura do Projeto
