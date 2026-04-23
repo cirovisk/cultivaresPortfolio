@@ -3,7 +3,6 @@ import os
 from sqlalchemy import text
 from tabulate import tabulate
 
-# Config: Adição de 'src' ao sys.path para importações locais
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from db.manager import engine
 

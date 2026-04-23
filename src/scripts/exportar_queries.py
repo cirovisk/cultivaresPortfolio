@@ -3,7 +3,6 @@ from sqlalchemy import text
 from db.manager import engine
 from pathlib import Path
 
-# I/O: Garantia de diretório de destino
 Path("../data").mkdir(exist_ok=True)
 
 query = """

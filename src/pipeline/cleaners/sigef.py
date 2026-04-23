@@ -94,8 +94,8 @@ def clean_sigef(dataframes: dict) -> dict:
     processed = {}
     if "campos_producao" in dataframes:
         processed["campos_producao"] = clean_sigef_producao(dataframes["campos_producao"])
-    # Suporta ambas as chaves: nova ('reserva_semente') e legada ('uso_proprio')
-    # Nota: Não usar 'or' com DataFrames — causa 'truth value ambiguous'. Usar .get() com checagem explícita.
+    # Suporte a fontes de dados com chaves variadas ('reserva_semente' ou 'uso_proprio').
+    # Validação via .get() para evitar ambiguidades bool em DataFrames.
     reserva_df = dataframes.get("reserva_semente") if "reserva_semente" in dataframes else dataframes.get("uso_proprio")
     if reserva_df is not None:
         processed["reserva_semente"] = clean_sigef_reserva_semente(reserva_df)

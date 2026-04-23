@@ -20,7 +20,8 @@ O objetivo principal é criar um ambiente unificado para análise de dados agro,
 
 ## 📊 Fontes de Dados
 
-O pipeline extrai e processa dados das seguintes fontes:
+<details>
+<summary>Clique para ver o detalhamento das 8 fontes integradas</summary>
 
 1.  **MAPA/SNPC (CultivarWeb):** Registro Nacional de Cultivares (RNC). Fornece dados sobre variedades genéticas certificadas, mantenedores oficiais, portarias de registro e proteção de cultivares.
 2.  **IBGE/SIDRA (PAM):** Produção Agrícola Municipal. Séries anuais consolidadas sobre área plantada, área colhida, quantidade produzida e valor da produção para 60+ culturas temporárias e permanentes.
@@ -31,42 +32,30 @@ O pipeline extrai e processa dados das seguintes fontes:
 7.  **MAPA/SIGEF (Sementes):** Controle e fiscalização da produção de sementes e mudas, garantindo a rastreabilidade e a qualidade da tecnologia genética aplicada no campo.
 8.  **INMET (Meteorologia):** Rede de 700+ estações automáticas que fornecem indicadores diários de precipitação, temperatura e umidade para cruzamento com o desempenho das safras.
 
+</details>
 
 ## 🛠️ Tecnologias Utilizadas
 
--   **Linguagem:** Python 3.12+
--   **Análise de Dados:** Pandas, NumPy
--   **Banco de Dados:** PostgreSQL via SQLAlchemy (ORM)
--   **API:** FastAPI, Pydantic, Uvicorn
--   **Segurança:** SlowAPI (Rate Limiting)
--   **Testes Automáticos:** Pytest
--   **Infraestrutura:** Docker & Docker Compose
--   **BI/Dashboard:** Metabase
--   **CI/CD:** GitHub Actions
+*   **Linguagem & Core:** Python 3.12+, Pandas, NumPy, Pydantic.
+*   **Dados & API:** PostgreSQL, SQLAlchemy, FastAPI, Uvicorn, SlowAPI.
+*   **Qualidade & Infra:** Pytest, Docker & Docker Compose, GitHub Actions.
+*   **BI & Dashboards:** Metabase.
 
 ## 🏗️ Arquitetura do Projeto
 
-O projeto segue uma arquitetura modular baseada em um modelo Estrela (Star Schema):
-
--   **Dimensões:** Cultura, Município, Mantenedor.
--   **Fatos:** Cadastro de Cultivares, Produção PAM, Risco ZARC, Produção/Preços CONAB, Agrofit, Fertilizantes, SIGEF e Meteorologia INMET.
-
-## 📈 Performance e Escalabilidade (ZARC)
-
-O AgroHarvest BR foi desenhado para lidar com volumes reais do agronegócio. O módulo **ZARC**, que processa milhões de registros de risco climático, utiliza:
-
--   **Carga via Streaming:** Processamento linha a linha para baixo consumo de memória RAM.
--   **Indexação Composta:** Uso de índices B-Tree no PostgreSQL em colunas de alta cardinalidade (`id_municipio`, `id_cultura`), garantindo que consultas analíticas sejam respondidas em milissegundos.
--   **Escalabilidade de Fonte:** É possível integrar novas culturas (Milho, Café, Arroz, etc.) apenas adicionando os CSVs brutos na pasta `data/zarc/` e rodando o pipeline.
-
+O projeto segue uma arquitetura modular baseada em um modelo Estrela (Star Schema).
+A documentação visual completa pode ser encontrada em: **[ARCHITECTURE_VISUAL.md](docs/ARCHITECTURE_VISUAL.md)**
 
 ### Estrutura de Diretórios
+<details>
+<summary>Visualizar árvore de diretórios</summary>
 
 ```text
 .
 ├── docker/                 # Configurações Docker
 │   └── app.Dockerfile      # Imagem única para ETL, API e Testes
 ├── docs/                   # Documentação técnica e schemas
+│   └── ARCHITECTURE_VISUAL.md # Diagramas ERD e Fluxo de Dados
 ├── src/                    # Código-fonte (Python root via PYTHONPATH)
 │   ├── api/           # Camada de API (Endpoints, Routers, Schemas)
 │   ├── db/            # Modelagem Star Schema (SQLAlchemy)
@@ -77,6 +66,15 @@ O AgroHarvest BR foi desenhado para lidar com volumes reais do agronegócio. O m
 ├── docker-compose.yml  # Orquestração de serviços (app, api, test)
 └── DATABASE_METADATA.md # Dicionário de dados do banco
 ```
+</details>
+
+## 📈 Performance e Escalabilidade (ZARC)
+
+O AgroHarvest BR foi desenhado para lidar com volumes reais do agronegócio. O módulo **ZARC**, que processa milhões de registros de risco climático, utiliza:
+
+-   **Carga via Streaming:** Processamento linha a linha para baixo consumo de memória RAM.
+-   **Indexação Composta:** Uso de índices B-Tree no PostgreSQL em colunas de alta cardinalidade (`id_municipio`, `id_cultura`), garantindo que consultas analíticas sejam respondidas em milissegundos.
+-   **Escalabilidade de Fonte:** É possível integrar novas culturas (Milho, Café, Arroz, etc.) apenas adicionando os CSVs brutos na pasta `data/zarc/` e rodando o pipeline.
 
 ## ⚙️ Como Executar
 
@@ -97,13 +95,13 @@ O AgroHarvest BR foi desenhado para lidar com volumes reais do agronegócio. O m
     ```
     *Este comando inicializa o banco de dados PostgreSQL e executa o processo de extração completo.*
 
-2.  **Subir a API e Acessar Documentação:**
+3.  **Subir a API e Acessar Documentação:**
     ```bash
     docker-compose up api
     ```
     *Acesse `http://localhost:8000/docs` para visualizar a documentação interativa (Swagger).*
 
-3.  **Executar Testes de Integração e Unitários:**
+4.  **Executar Testes de Integração e Unitários:**
     ```bash
     docker-compose run --rm test
     ```
@@ -111,12 +109,17 @@ O AgroHarvest BR foi desenhado para lidar com volumes reais do agronegócio. O m
 ## ⚖️ Licença e Uso de Dados
 
 - **Código:** Este projeto está sob a licença [MIT](LICENSE).
-- **Dados:** O projeto utiliza bases de dados públicas regidas pela Lei de Acesso à Informação (LAI) e decretos federais de Dados Abertos. Ao utilizar este código para novos fins, respeite as seguintes atribuições das fontes primárias:
+- **Dados:** O projeto utiliza bases de dados públicas regidas pela Lei de Acesso à Informação (LAI).
+
+<details>
+<summary>Clique para ver detalhes das atribuições legais (IBGE, CONAB, MAPA, INMET)</summary>
 
 - **IBGE (SIDRA/PAM):** Dados públicos sob os [Termos de Uso do IBGE](https://www.ibge.gov.br/institucional/o-ibge/termos-de-uso.html). A citação da fonte é obrigatória.
--   **CONAB:** Dados sob licença [CC BY-ND 3.0](https://creativecommons.org/licenses/by-nd/3.0/br/). A reprodução é permitida para fins não lucrativos com citação obrigatória da fonte. 
--   **MAPA (ZARC, RNC, Agrofit, Fertilizantes, SIGEF):** Dados abertos conforme o [Decreto nº 8.777/2016](http://www.planalto.gov.br/ccivil_03/_ato2015-2018/2016/decreto/d8777.htm).
--   **INMET:** Dados públicos regidos pela LAI. A citação da fonte (**Instituto Nacional de Meteorologia - INMET**) é obrigatória conforme normas técnicas.
+- **CONAB:** Dados sob licença [CC BY-ND 3.0](https://creativecommons.org/licenses/by-nd/3.0/br/). A reprodução é permitida para fins não lucrativos com citação obrigatória da fonte. 
+- **MAPA (ZARC, RNC, Agrofit, Fertilizantes, SIGEF):** Dados abertos conforme o [Decreto nº 8.777/2016](http://www.planalto.gov.br/ccivil_03/_ato2015-2018/2016/decreto/d8777.htm).
+- **INMET:** Dados públicos regidos pela LAI. A citação da fonte (**Instituto Nacional de Meteorologia - INMET**) é obrigatória conforme normas técnicas.
+
+</details>
 
 ---
 *Este projeto faz parte de um portfólio de engenharia de dados (AgroHarvest BR) focado em agronegócio.*
