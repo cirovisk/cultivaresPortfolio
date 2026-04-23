@@ -26,6 +26,14 @@ def clean_sigef_producao(df: pd.DataFrame) -> pd.DataFrame:
         "DS_ESPECIE": "especie",
         "DS_CATEGORIA": "categoria",
         "DS_CULTIVAR": "cultivar_raw",
+        "DS_MUNICIPIO": "municipio",
+        "DS_UF": "uf",
+        "DS_STATUS": "status",
+        "DT_PLANTIO": "data_plantio",
+        "DT_COLHEITA": "data_colheita",
+        "NR_AREA": "area_ha",
+        "NR_PRODUCAO_BRUTA": "producao_bruta_t",
+        "NR_PRODUCAO_EST": "producao_est_t",
     }
     
     df.columns = [c.strip() for c in df.columns]
