@@ -1,7 +1,5 @@
 # AgroHarvest BR - Pipeline de Dados Agrícolas
 
-![AgroHarvest BR Banner](./assets/banner_v2.png)
-
 ## 🏗️ Arquitetura do Sistema
 ![Arquitetura Unificada - AgroHarvest BR](./assets/architecture_diagram_v2.png)
 
