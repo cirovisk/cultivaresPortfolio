@@ -19,7 +19,7 @@ def clean_zarc(df: pd.DataFrame) -> pd.DataFrame:
         .str.decode('utf-8')
     )
     
-    ibge_cols = [c for c in df_clean.columns if "ibge" in c or "cd_mun" in c or "codigo_mun" in c]
+    ibge_cols = [c for c in df_clean.columns if "ibge" in c or "cd_mun" in c or "codigo_mun" in c or "geocodigo" in c]
     if ibge_cols:
         df_clean = df_clean.rename(columns={ibge_cols[0]: "cod_municipio_ibge"})
     

@@ -1,7 +1,7 @@
 import os
 import logging
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, BigInteger, ForeignKey, DateTime, UniqueConstraint
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, BigInteger, ForeignKey, DateTime, UniqueConstraint, Index
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.sql import func
 
@@ -83,7 +83,10 @@ class FatoRiscoZARC(Base):
     risco_climatico = Column(String, index=True)
     data_modificacao = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
-    __table_args__ = (UniqueConstraint('id_cultura', 'id_municipio', 'tipo_solo', 'periodo_plantio', name='_zarc_uc'),)
+    __table_args__ = (
+        UniqueConstraint('id_cultura', 'id_municipio', 'tipo_solo', 'periodo_plantio', name='_zarc_uc'),
+        Index('idx_zarc_municipio_cultura', 'id_municipio', 'id_cultura'),
+    )
 
 class FatoProducaoConab(Base):
     __tablename__ = "fato_producao_conab"

@@ -3,7 +3,7 @@
 ![AgroHarvest BR Banner](./assets/banner_v2.png)
 
 ## 🏗️ Arquitetura do Sistema
-![Arquitetura Híbrida - AgroHarvest BR](./assets/architecture_diagram_v2.png)
+![Arquitetura Unificada - AgroHarvest BR](./assets/architecture_diagram_v2.png)
 
 Este projeto é uma solução de **Engenharia de Dados** focada na integração de múltiplos datasets do setor agrícola brasileiro.
  Ele consolida informações de registros de cultivares (RNC), produção agrícola municipal (PAM) e zoneamento de risco climático (ZARC) em um data warehouse estruturado.
@@ -35,8 +35,6 @@ O pipeline extrai e processa dados das seguintes fontes:
 -   **Segurança:** SlowAPI (Rate Limiting)
 -   **Testes Automáticos:** Pytest
 -   **Infraestrutura:** Docker & Docker Compose
--   **Big Data:** DuckDB (OLAP Engine), Apache Parquet (Formato Colunar)
-
 -   **CI/CD:** GitHub Actions
 
 ## 🏗️ Arquitetura do Projeto
@@ -46,17 +44,13 @@ O projeto segue uma arquitetura modular baseada em um modelo Estrela (Star Schem
 -   **Dimensões:** Cultura, Município, Mantenedor.
 -   **Fatos:** Cadastro de Cultivares, Produção PAM, Risco ZARC, Produção/Preços CONAB, Agrofit, Fertilizantes, SIGEF e Meteorologia INMET.
 
-## 📈 Escalabilidade e Big Data
+## 📈 Performance e Escalabilidade (ZARC)
 
-O AgroHarvest BR foi desenhado para lidar com volumes massivos de dados típicos do agronegócio (Bilhões de linhas) utilizando uma **Arquitetura Híbrida**:
+O AgroHarvest BR foi desenhado para lidar com volumes reais do agronegócio. O módulo **ZARC**, que processa milhões de registros de risco climático, utiliza:
 
--   **Camada Relacional (PostgreSQL):** Gerencia metadados e entidades com alta integridade (Municípios, DimCultura, Estabelecimentos).
--   **Camada de Analytics (Parquet + DuckDB):** Gerencia os dados massivos e imutáveis. Atualmente, o módulo **ZARC** processa mais de **196 milhões de registros** usando arquivos Parquet particionados por UF, garantindo consultas analíticas em milissegundos sem o custo de um banco de dados tradicional.
-
-### Expansão do ZARC
-Atualmente, o dataset de indicações foca em **Soja**. No entanto, a arquitetura é agnóstica a cultura:
-1.  **Novas Culturas:** É possível integrar Milho, Café, Arroz, etc., apenas adicionando os CSVs brutos do SISZARC na pasta `data/zarc/`.
-2.  **Novas Safras:** O motor de consulta (DuckDB) utiliza *Discovery* automático (`**/*.parquet`), integrando novas safras assim que processadas pelo pipeline.
+-   **Carga via Streaming:** Processamento linha a linha para baixo consumo de memória RAM.
+-   **Indexação Composta:** Uso de índices B-Tree no PostgreSQL em colunas de alta cardinalidade (`id_municipio`, `id_cultura`), garantindo que consultas analíticas sejam respondidas em milissegundos.
+-   **Escalabilidade de Fonte:** É possível integrar novas culturas (Milho, Café, Arroz, etc.) apenas adicionando os CSVs brutos na pasta `data/zarc/` e rodando o pipeline.
 
 
 ### Estrutura de Diretórios

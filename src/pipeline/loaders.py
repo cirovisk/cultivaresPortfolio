@@ -23,13 +23,34 @@ def get_cultura_id(nome_cultura, mapping):
         s = "".join(c for c in unicodedata.normalize('NFKD', s) if unicodedata.category(c) != 'Mn')
         return s.replace("-", " ").replace("_", " ")
 
+    # Dicionário de Sinônimos Científicos (SIGEF/MAPA -> Popular)
+    SYNONYMS = {
+        "glycine max": "soja",
+        "zea mays": "milho",
+        "triticum aestivum": "trigo",
+        "gossypium hirsutum": "algodao",
+        "avena strigosa": "aveia",
+        "avena sativa": "aveia",
+        "saccharum": "cana-de-acucar"
+    }
+
     # Tenta match exato primeiro (antes de normalizar)
     if nome_cultura in mapping: return mapping[nome_cultura]
 
     nombre_norm = norm(nome_cultura)
+    
+    # Aplica Tradução de Sinônimos
+    for syn, target in SYNONYMS.items():
+        if syn in nombre_norm:
+            nombre_norm = target
+            break
+
     for alvo, cid in mapping.items():
         alvo_norm = norm(alvo)
-        if alvo_norm in nombre_norm or nombre_norm in alvo_norm:
+        # Match de palavra inteira ou exato para evitar erros como strigosa -> trigo
+        if f" {alvo_norm} " in f" {nombre_norm} " or f" {nombre_norm} " in f" {alvo_norm} ":
+            return cid
+        if alvo_norm == nombre_norm:
             return cid
     return None
 
@@ -282,14 +303,25 @@ def load_fact_zarc(db, data, map_cult, map_mun):
         
     df_f["cod_municipio_ibge"] = df_f["cod_municipio_ibge"].astype(str).str[:7]
     df_f["id_municipio"] = df_f["cod_municipio_ibge"].map(map_mun)
-    renames = {"solo": "tipo_solo", "decendio": "periodo_plantio", "periodo": "periodo_plantio", "risco": "risco_climatico"}
-    for k, v in renames.items():
-        for col in df_f.columns:
-            if k in col.lower(): df_f = df_f.rename(columns={col: v})
+    # Tratamento de colunas dec1...dec36 (Formato Largo para Longo)
+    dec_cols = [c for c in df_f.columns if c.lower().startswith("dec")]
+    if dec_cols:
+        # Identifica colunas de ID para o melt
+        id_vars = [c for c in df_f.columns if c not in dec_cols]
+        df_f = df_f.melt(id_vars=id_vars, value_vars=dec_cols, var_name="periodo_plantio", value_name="risco_climatico")
+
+    # Mapeamento de Solo
+    if "cod_solo" in df_f.columns:
+        df_f = df_f.rename(columns={"cod_solo": "tipo_solo"})
+
     cols = ["id_cultura", "id_municipio", "tipo_solo", "periodo_plantio", "risco_climatico"]
     df_f = df_f[[c for c in cols if c in df_f.columns]].dropna(subset=["id_cultura", "id_municipio"])
+    
+    # Remove riscos nulos ou zerados se necessário (opcional, aqui mantemos)
+    df_f = df_f[df_f["risco_climatico"].notna()]
+    
     upsert_data(FatoRiscoZARC, df_f, index_elements=['id_cultura', 'id_municipio', 'tipo_solo', 'periodo_plantio'])
-    log.info(f"Fato ZARC: {len(df_f)} registros upserted.")
+    log.info(f"Fato ZARC: {len(df_f)} registros processados neste chunk.")
 
 def load_fact_conab(db, df_dict, map_cult, map_mun):
     if not isinstance(df_dict, dict): return

@@ -78,5 +78,25 @@ services:
         limits:
           memory: 1G
 
+  metabase:
+    image: metabase/metabase:v0.50.21
+    container_name: cultivares_metabase
+    profiles: ["dashboard"]
+    ports:
+      - "3000:3000"
+    environment:
+      - MB_DB_TYPE=h2
+      - MB_DB_FILE_PATH=/metabase-data/metabase.db
+    volumes:
+      - metabase_data:/metabase-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
 volumes:
   pgdata:
+  metabase_data:

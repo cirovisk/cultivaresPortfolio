@@ -63,6 +63,7 @@ Zoneamento de Risco Climático por município e solo.
 - `tipo_solo`: Classificação do solo (Tipo 1, 2 ou 3).
 - `periodo_plantio`: Decêndio/Período recomendado.
 - `risco_climatico`: Percentual de risco (20%, 30%, 40%).
+- `data_modificacao`: Timestamp de auditoria.
 
 ### `fato_producao_conab` (Fonte: CONAB)
 Estimativas e histórico de produção por UF e Safra.
@@ -173,3 +174,14 @@ O banco de dados segue o princípio do privilégio mínimo para a camada de expo
 
 Todas as tabelas de Fato possuem o campo:
 - `data_modificacao`: Timestamp da última inserção ou atualização (UPSERT), facilitando cargas incrementais e auditoria de frescor dos dados.
+
+---
+
+## 🔗 Referências de Metadados Oficiais
+
+Se precisar consultar a metodologia original de cada fonte:
+
+- **IBGE (PAM):** [Metodologia e Conceitos - SIDRA](https://www.ibge.gov.br/estatisticas/economicas/agricultura-e-pecuaria/9117-producao-agricola-municipal-culturas-temporarias-e-permanentes.html?=&t=o-que-e)
+- **MAPA (ZARC):** [Manual de Indicadores e Metodologia ZARC](https://www.gov.br/agricultura/pt-br/assuntos/riscos-seguro/programa-nacional-de-zoneamento-agricola-de-risco-climatico)
+- **CONAB (Preços e Safras):** [Metodologia de Levantamento de Safras](https://www.conab.gov.br/info-agro/safras/metodologia)
+- **MAPA (Agrofit):** [Consulta de Insumos e Defensivos](https://agrofit.agricultura.gov.br/agrofit_cons/principal_agrofit_cons)

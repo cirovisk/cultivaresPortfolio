@@ -63,9 +63,9 @@ class ProducaoConabSchema(BaseModel):
 
 class SigefProducaoSchema(BaseModel):
     id_sigef_producao: int
-    safra: str
-    especie: str
-    categoria: str
+    safra: Optional[str] = None
+    especie: Optional[str] = None
+    categoria: Optional[str] = None
     area_ha: Optional[float] = None
     producao_bruta_t: Optional[float] = None
     producao_est_t: Optional[float] = None
@@ -81,7 +81,7 @@ class AgrofitSchema(BaseModel):
     marca_comercial: Optional[str] = None
     classe: Optional[str] = None
     praga_comum: Optional[str] = None
-    cultura: str
+    cultura: Optional[str] = None
     
     model_config = ConfigDict(from_attributes=True)
 
@@ -89,7 +89,7 @@ class FertilizanteSchema(BaseModel):
     id_fertilizante: int
     uf: Optional[str] = None
     municipio: Optional[str] = None
-    nr_registro_estabelecimento: str
+    nr_registro_estabelecimento: Optional[str] = None
     razao_social: Optional[str] = None
     area_atuacao: Optional[str] = None
     atividade: Optional[str] = None

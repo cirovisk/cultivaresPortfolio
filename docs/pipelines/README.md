@@ -21,6 +21,5 @@ Esta pasta contém o detalhamento técnico de cada pipeline de extração e tran
 
 1.  **Extractors (`src/pipeline/`):** Classes que gerenciam a conexão com a fonte, o download dos dados e a persistência em cache. Não contêm lógica de negócio complexa.
 2.  **Cleaners (`src/pipeline/cleaners/`):** Funções puras (sem estado) que recebem dados brutos (JSON/CSV) e devolvem DataFrames normalizados. Este desacoplamento permite testar a limpeza de dados sem precisar de internet ou banco de dados.
-3.  **Arquitetura Híbrida (Lakehouse):** Para bibliotecas de grande volume (Ex: ZARC com 196M+ linhas), o pipeline desvia a carga do PostgreSQL para arquivos **Parquet** particionados, utilizando o **DuckDB** como motor de consulta analítica.
-4.  **Normalização Centralizada:** Uso do método `normalize_culture_name` (`src/pipeline/utils.py`) para unificar as nomenclaturas de culturas entre IBGE, MAPA e CONAB.
+3.  **Normalização Centralizada:** Uso do método `normalize_culture_name` (`src/pipeline/utils.py`) para unificar as nomenclaturas de culturas entre IBGE, MAPA e CONAB.
 

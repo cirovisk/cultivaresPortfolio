@@ -22,7 +22,7 @@ from api.schemas import (
     JanelaDeAplicacaoSchema,
     AuditoriaEstimativasSchema,
 )
-from api.duck_bridge import query_risco
+
 
 
 
@@ -70,22 +70,19 @@ def raio_x_municipal(
         qtde_produzida_ton=pam.qtde_produzida_ton if pam else None,
     )
 
-    # --- Risco ZARC predominante (Calculado via DuckDB/Parquet) ---
-    risco_data = query_risco(codigo_ibge=mun.codigo_ibge, cultura=cultura)
+    # --- Risco ZARC predominante (Calculado via Postgres) ---
+    zarc_rows = db.query(FatoRiscoZARC.risco_climatico).filter(
+        FatoRiscoZARC.id_municipio == mun.id_municipio,
+        FatoRiscoZARC.id_cultura == cult.id_cultura
+    ).all()
     
     risco_predominante = None
-    if risco_data:
-        # Pega todos os valores de risco (dec1..dec36) de todas as linhas (solos)
-        all_risks = []
-        for row in risco_data:
-            dec_values = [row.get(f"dec{i}") for i in range(1, 37)]
-            all_risks.extend([v for v in dec_values if v is not None and v > 0])
-        
-        if all_risks:
-            # Calcula o valor mais frequente (moda)
+    if zarc_rows:
+        riscos = [r[0] for r in zarc_rows if r[0]]
+        if riscos:
             from collections import Counter
-            most_common = Counter(all_risks).most_common(1)
-            risco_predominante = f"{most_common[0][0]}%" if most_common else None
+            most_common = Counter(riscos).most_common(1)
+            risco_predominante = f"{most_common[0][0]}" if most_common else None
 
 
     # --- Resumo Climático do ano (médias e acumulado INMET) ---
