@@ -14,7 +14,7 @@ O objetivo principal é criar um ambiente unificado para análise de dados agro,
 
 ## 🖥️ Dashboard - Visualização de Dados
 
-https://github.com/cirovisk/cultivaresPortfolio/raw/main/assets/dashboard.mp4
+[![Assista ao vídeo do Dashboard](https://github.com/cirovisk/cultivaresPortfolio/raw/main/assets/dashboard_thumb.jpg)](https://github.com/cirovisk/cultivaresPortfolio/blob/main/assets/dashboard.mp4)
 
 *Visualização analítica consolidada no Metabase, integrando fluxos de produção (PAM), viabilidade climática (ZARC) e registros genéticos (RNC/SIGEF).*
 
