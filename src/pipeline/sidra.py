@@ -61,6 +61,8 @@ class SidraExtractor(BaseExtractor):
         return final_map
 
     def extract(self) -> pd.DataFrame:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
         cache_file = os.path.join(self.data_dir, f"pam_sidra_{self.ano}.csv")
         
         if self.use_cache and os.path.exists(cache_file):
@@ -69,15 +71,13 @@ class SidraExtractor(BaseExtractor):
                 return pd.read_csv(cache_file, dtype=str)
         
         crops_ids = self._map_culture_ids()
-        all_dfs = []
         
         # Variáveis Tabela 5457: 8331 (Área Plantada), 216 (Área Colhida), 214 (Produção), 215 (Valor da Produção)
         variables = "8331,216,214,215"
         
-        for crop_name, crop_id in crops_ids.items():
+        def _fetch_crop(crop_name, crop_id):
             self.log.info(f"Buscando dados IBGE para {crop_name} (ID: {crop_id})")
             url = f"https://apisidra.ibge.gov.br/values/t/5457/n6/all/v/{variables}/p/{self.ano}/c782/{crop_id}"
-            
             try:
                 resp = requests.get(url, timeout=30)
                 if resp.status_code == 200:
@@ -85,11 +85,21 @@ class SidraExtractor(BaseExtractor):
                     if data and len(data) > 1:
                         df_tmp = pd.DataFrame(data[1:], columns=data[0])
                         df_tmp["cultura_raw"] = crop_name
-                        all_dfs.append(df_tmp)
+                        return df_tmp
                 else:
                     self.log.warning(f"Erro {resp.status_code} na consulta de {crop_name}: {resp.text}")
             except Exception as e:
                 self.log.error(f"Exceção ao buscar {crop_name}: {e}")
+            return None
+        
+        # Requests paralelos: 5 culturas simultâneas (vs. sequencial)
+        all_dfs = []
+        with ThreadPoolExecutor(max_workers=len(crops_ids)) as pool:
+            futures = {pool.submit(_fetch_crop, name, cid): name for name, cid in crops_ids.items()}
+            for future in as_completed(futures):
+                result = future.result()
+                if result is not None:
+                    all_dfs.append(result)
         
         if not all_dfs:
             self.log.warning("Extrator SIDRA: nenhum dado retornado para todas as culturas alvo. Verifique conectividade ou IDs de categoria.")

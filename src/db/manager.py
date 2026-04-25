@@ -19,10 +19,15 @@ DB_NAME = os.getenv("POSTGRES_DB", "cultivares_db")
 # Permite forçar SQLite para testes rápidos
 if os.getenv("USE_SQLITE", "false").lower() == "true":
     DATABASE_URL = "sqlite:///:memory:"
+    engine = create_engine(DATABASE_URL, echo=False)
 else:
     DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-
-engine = create_engine(DATABASE_URL, echo=False)
+    engine = create_engine(
+        DATABASE_URL, echo=False,
+        pool_size=5, max_overflow=10,
+        pool_pre_ping=True,
+        pool_recycle=3600
+    )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

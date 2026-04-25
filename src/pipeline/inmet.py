@@ -46,20 +46,29 @@ class InmetExtractor(BaseExtractor):
         """
         Busca dados históricos para uma lista de IDs de estação.
         Retorna dicionário {station_id: DataFrame}.
+        Otimizado: requests paralelos via ThreadPoolExecutor (I/O-bound).
         """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
         end_date = datetime.now()
         start_date = end_date - timedelta(days=self.days_history)
-        
-        start_str = start_date.strftime("%Y-%m-%d")
-        end_str = end_date.strftime("%Y-%m-%d")
 
         dataframes = {}
-        for sid in station_ids:
-            # Lógica de Chunking: INMET API falha em períodos muito longos (> 1 ano geralmente).
-            # Vou buscar o período total em blocos de 365 dias.
-            df_station = self._fetch_station_data_in_chunks(sid, start_date, end_date)
-            if not df_station.empty:
-                dataframes[sid] = df_station
+        max_workers = min(10, len(station_ids)) if station_ids else 1
+        
+        def _fetch_one(sid):
+            return sid, self._fetch_station_data_in_chunks(sid, start_date, end_date)
+        
+        self.log.info(f"Buscando INMET: {len(station_ids)} estações com {max_workers} workers paralelos...")
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {pool.submit(_fetch_one, sid): sid for sid in station_ids}
+            for future in as_completed(futures):
+                try:
+                    sid, df_station = future.result()
+                    if not df_station.empty:
+                        dataframes[sid] = df_station
+                except Exception as e:
+                    self.log.error(f"Erro paralelo em estação {futures[future]}: {e}")
         
         return dataframes
 

@@ -1,4 +1,5 @@
 import logging
+import unicodedata
 import pandas as pd
 import requests
 from sqlalchemy import text, inspect, Integer, BigInteger, Numeric
@@ -18,7 +19,6 @@ def get_cultura_id(nome_cultura, mapping):
     if not nome_cultura: return None
 
     def norm(s):
-        import unicodedata
         s = str(s).lower().strip()
         s = "".join(c for c in unicodedata.normalize('NFKD', s) if unicodedata.category(c) != 'Mn')
         return s.replace("-", " ").replace("_", " ")
@@ -54,52 +54,67 @@ def get_cultura_id(nome_cultura, mapping):
             return cid
     return None
 
+# Cache de metadados ORM por modelo para evitar inspect() repetido em cada chamada
+_model_meta_cache = {}
+
+def _get_model_meta(model):
+    """Retorna metadados do modelo ORM cacheados (pk_cols, int_cols, all_cols)."""
+    if model not in _model_meta_cache:
+        mapper = inspect(model)
+        _model_meta_cache[model] = {
+            "pk_cols": [c.key for c in mapper.primary_key],
+            "int_cols": set(c.key for c in mapper.column_attrs if isinstance(c.expression.type, (Integer, BigInteger))),
+            "all_cols": set(c.key for c in mapper.column_attrs),
+        }
+    return _model_meta_cache[model]
+
 def upsert_data(model, df, index_elements, chunk_size=1000):
     if df.empty: return
     
     # Garante que não haja duplicatas no set todo para evitar CardinalityViolation (Postgres)
     df = df.drop_duplicates(subset=index_elements, keep='last')
     
-    # Identifica colunas que devem ser inteiras para conversão explícita
-    mapper = inspect(model)
-    pk_cols = [c.key for c in mapper.primary_key]
-    model_int_cols = [c.key for c in mapper.column_attrs if isinstance(c.expression.type, (Integer, BigInteger))]
-    model_cols = [c.key for c in mapper.column_attrs]
+    # Metadados do modelo (cacheados entre chamadas)
+    meta = _get_model_meta(model)
+    pk_cols = meta["pk_cols"]
+    model_int_cols = meta["int_cols"]
+    model_cols = meta["all_cols"]
     
-    for i in range(0, len(df), chunk_size):
-        chunk_df = df.iloc[i : i + chunk_size]
-        records = chunk_df.to_dict(orient="records")
-        
-        valid_records = []
-        for r in records:
-            valid_row = {}
-            for k, v in r.items():
-                if k in model_cols:
-                    if pd.isna(v):
-                        valid_row[k] = None
-                    elif k in model_int_cols:
-                        try:
-                            # Garante que IDs e outros campos inteiros sejam int, não float (ex: 4.0 -> 4)
-                            valid_row[k] = int(float(v))
-                        except (ValueError, TypeError):
+    # Conexão única para todos os chunks — evita overhead de abrir/fechar transação por chunk
+    with engine.begin() as conn:
+        for i in range(0, len(df), chunk_size):
+            chunk_df = df.iloc[i : i + chunk_size]
+            records = chunk_df.to_dict(orient="records")
+            
+            valid_records = []
+            for r in records:
+                valid_row = {}
+                for k, v in r.items():
+                    if k in model_cols:
+                        if pd.isna(v):
                             valid_row[k] = None
-                    else:
-                        valid_row[k] = v
-            valid_records.append(valid_row)
+                        elif k in model_int_cols:
+                            try:
+                                # Garante que IDs e outros campos inteiros sejam int, não float (ex: 4.0 -> 4)
+                                valid_row[k] = int(float(v))
+                            except (ValueError, TypeError):
+                                valid_row[k] = None
+                        else:
+                            valid_row[k] = v
+                valid_records.append(valid_row)
 
-        if not valid_records: continue
+            if not valid_records: continue
 
-        stmt = insert(model).values(valid_records)
-        
-        # Colunas para atualizar em caso de conflito (todas exceto as do índice, PK e metadados automáticos)
-        update_cols = {c: stmt.excluded[c] for c in model_cols if c not in index_elements and c not in pk_cols and c != 'data_modificacao'}
-        
-        upsert_stmt = stmt.on_conflict_do_update(
-            index_elements=index_elements,
-            set_=update_cols
-        )
-        
-        with engine.begin() as conn:
+            stmt = insert(model).values(valid_records)
+            
+            # Colunas para atualizar em caso de conflito (todas exceto as do índice, PK e metadados automáticos)
+            update_cols = {c: stmt.excluded[c] for c in model_cols if c not in index_elements and c not in pk_cols and c != 'data_modificacao'}
+            
+            upsert_stmt = stmt.on_conflict_do_update(
+                index_elements=index_elements,
+                set_=update_cols
+            )
+            
             conn.execute(upsert_stmt)
 
 def preencher_dimensao_cultura(db, culturas_lista):
@@ -137,29 +152,31 @@ def preencher_dimensao_mantenedor(db, df_cult):
     cols = ["mantenedor"] + ([col_setor] if col_setor else [])
     unique_mants = df_cult[cols].drop_duplicates().dropna(subset=["mantenedor"])
     
-    novos = []
+    # Bulk: busca todos os nomes existentes em 1 query (vs. N queries individuais)
+    existing_names = set(r[0] for r in db.query(DimMantenedor.nome).all())
+    
+    novos_objetos = []
     for _, row in unique_mants.iterrows():
         nome = row["mantenedor"]
-        setor = row[col_setor] if col_setor else None
-        db_mant = db.query(DimMantenedor).filter(DimMantenedor.nome == nome).first()
-        if not db_mant:
-            db_mant = DimMantenedor(nome=nome, setor=setor)
-            db.add(db_mant)
-            novos.append(nome)
-        mant_map[nome] = db_mant
+        if nome not in existing_names:
+            setor = row[col_setor] if col_setor else None
+            novos_objetos.append(DimMantenedor(nome=nome, setor=setor))
 
-    if novos:
+    if novos_objetos:
+        db.bulk_save_objects(novos_objetos)
         db.commit()
+        log.info(f"DimMantenedor: {len(novos_objetos)} novo(s) registro(s) inserido(s).")
     
-    for nome, obj in mant_map.items():
-        db.refresh(obj)
-        mant_map[nome] = obj.id_mantenedor
+    # Reconstroi mapa completo com 1 query
+    for m in db.query(DimMantenedor).all():
+        mant_map[m.nome] = m.id_mantenedor
     return mant_map
 
 def carregar_municipios_completo_ibge(db):
     """
     Busca a lista oficial de todos os municípios do Brasil via API do IBGE 
     e popula a DimMunicipio de forma proativa.
+    Otimizado: 1 SELECT bulk para códigos existentes + 1 bulk insert para novos.
     """
     log.info("Buscando lista completa de municípios na API do IBGE...")
     url = "https://servicodados.ibge.gov.br/api/v1/localidades/municipios"
@@ -171,9 +188,15 @@ def carregar_municipios_completo_ibge(db):
         log.error(f"Falha ao buscar municípios no IBGE: {e}")
         return preencher_dimensao_municipio(db)
 
-    novos = 0
+    # Bulk: busca todos os códigos existentes em UMA query (vs. 5570 queries individuais)
+    existing_codes = set(r[0] for r in db.query(DimMunicipio.codigo_ibge).all())
+    
+    novos_objetos = []
     for m in muns_data:
         cod = str(m["id"])
+        if cod in existing_codes:
+            continue
+            
         nome = m["nome"]
         
         # Extração robusta da UF tentando diferentes caminhos na hierarquia IBGE
@@ -189,16 +212,12 @@ def carregar_municipios_completo_ibge(db):
             uf = "XX" # Fallback extremo para não quebrar a carga
             
         uf = str(uf).upper() if uf else "XX"
-        
-        db_mun = db.query(DimMunicipio).filter(DimMunicipio.codigo_ibge == cod).first()
-        if not db_mun:
-            db_mun = DimMunicipio(codigo_ibge=cod, nome=nome, uf=uf)
-            db.add(db_mun)
-            novos += 1
+        novos_objetos.append(DimMunicipio(codigo_ibge=cod, nome=nome, uf=uf))
     
-    if novos > 0:
+    if novos_objetos:
+        db.bulk_save_objects(novos_objetos)
         db.commit()
-        log.info(f"DimMunicipio: {novos} novos municípios importados do IBGE.")
+        log.info(f"DimMunicipio: {len(novos_objetos)} novos municípios importados do IBGE.")
     
     return preencher_dimensao_municipio(db)
 
@@ -360,14 +379,17 @@ def load_fact_agrofit(db, df, map_cult):
     upsert_data(FatoAgrofit, df_f, index_elements=index)
     log.info(f"Fato Agrofit: {len(df_f)} registros upserted.")
 
+def _map_municipio_by_name(df, map_mun_name):
+    """Lookup vectorizado de id_municipio via (nome, uf) — substitui apply(axis=1)."""
+    has_mun = df["municipio"].notna() & df["uf"].notna()
+    keys = df["municipio"].str.lower().str.strip() + "|" + df["uf"].str.upper()
+    lookup = {f"{n}|{u}": mid for (n, u), mid in map_mun_name.items()}
+    return keys.map(lookup).where(has_mun)
+
 def load_fact_fertilizantes(db, df, map_mun_name):
     if df.empty: return
     df_f = df.copy()
-    df_f["id_municipio"] = df_f.apply(
-        lambda x: map_mun_name.get((str(x["municipio"]).lower().strip(), str(x["uf"]).upper())) 
-        if pd.notna(x.get("municipio")) and pd.notna(x.get("uf")) else None, 
-        axis=1
-    )
+    df_f["id_municipio"] = _map_municipio_by_name(df_f, map_mun_name)
     df_f = df_f.drop_duplicates(subset=["nr_registro_estabelecimento"])
     upsert_data(FatoFertilizante, df_f, index_elements=['nr_registro_estabelecimento'])
     log.info(f"Fato Fertilizantes: {len(df_f)} estabelecimentos upserted.")
@@ -378,11 +400,7 @@ def load_fact_sigef(db, df_dict, map_cult, map_mun_name):
         if df.empty: continue
         df_f = df.copy()
         df_f["id_cultura"] = df_f["cultura"].apply(lambda x: get_cultura_id(x, map_cult))
-        df_f["id_municipio"] = df_f.apply(
-            lambda x: map_mun_name.get((str(x["municipio"]).lower().strip(), str(x["uf"]).upper())) 
-            if pd.notna(x.get("municipio")) and pd.notna(x.get("uf")) else None, 
-            axis=1
-        )
+        df_f["id_municipio"] = _map_municipio_by_name(df_f, map_mun_name)
         df_f = df_f.dropna(subset=["id_cultura", "id_municipio"])
         if key == "campos_producao":
             index = ['id_cultura', 'id_municipio', 'safra', 'especie', 'cultivar_raw', 'categoria']
@@ -413,17 +431,15 @@ def load_fact_meteorologia(db, df, extractor, all_muns):
     
     if df_meteo.empty: return
     
-    station_to_muns = {}
-    for mid, sid in mun_to_station.items():
-        station_to_muns.setdefault(sid, []).append(mid)
+    # Vectorizado: merge via lookup DataFrame (vs. iterrows() row-by-row)
+    station_mun_rows = [
+        {"estacao_id": sid, "id_municipio": mid}
+        for mid, sid in mun_to_station.items()
+    ]
+    station_mun_df = pd.DataFrame(station_mun_rows)
     
-    rows = []
-    for _, row in df_meteo.iterrows():
-        for mid in station_to_muns.get(row["estacao_id"], []):
-            new_row = row.to_dict()
-            new_row["id_municipio"] = mid
-            rows.append(new_row)
+    df_final = df_meteo.merge(station_mun_df, on="estacao_id", how="inner")
     
-    df_final = pd.DataFrame(rows)
+    if df_final.empty: return
     upsert_data(FatoMeteorologia, df_final, index_elements=['id_municipio', 'data'])
     log.info(f"Fato Meteorologia: {len(df_final)} registros upserted.")

@@ -6,7 +6,7 @@ log = logging.getLogger(__name__)
 
 def clean_producao(df: pd.DataFrame) -> pd.DataFrame:
     log.info(f"Cleaner CONAB Produção: {len(df)} linha(s) brutas.")
-    df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
+    df = df.apply(lambda col: col.str.strip() if col.dtype == "object" else col)
     renames = {
         "ano_agricola": "ano_agricola",
         "dsc_safra_previsao": "safra",
@@ -31,7 +31,7 @@ def clean_producao(df: pd.DataFrame) -> pd.DataFrame:
 
 def clean_precos(df: pd.DataFrame, freq="mensal") -> pd.DataFrame:
     log.info(f"Cleaner CONAB Preços ({freq}): {len(df)} linha(s) brutas.")
-    df = df.map(lambda x: x.strip() if isinstance(x, str) else x)
+    df = df.apply(lambda col: col.str.strip() if col.dtype == "object" else col)
     renames = {
         "produto": "produto_raw",
         "uf": "uf",

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
+from collections import Counter
 
 from db.manager import (
     FatoProducaoPAM, FatoRiscoZARC, FatoMeteorologia,
@@ -80,7 +81,6 @@ def raio_x_municipal(
     if zarc_rows:
         riscos = [r[0] for r in zarc_rows if r[0]]
         if riscos:
-            from collections import Counter
             most_common = Counter(riscos).most_common(1)
             risco_predominante = f"{most_common[0][0]}" if most_common else None
 
