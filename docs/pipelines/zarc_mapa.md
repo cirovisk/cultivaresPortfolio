@@ -5,12 +5,7 @@ Extração e processamento massivo de cenários de risco climático e recomenda�
 ## 📌 Fonte de Dados
 - **Agência:** MAPA (Ministério da Agricultura e Pecuária)
 - **Origem:** Portal de Dados Abertos / SISZARC.
-- **Diferenciação Crucial:**
-    1. **Tábua de Risco (zarc_risco.csv):** Contém as probabilidades de perda (dec1 a dec36) por Município/Solo. **Este é o arquivo carregado no PostgreSQL** para gerar os dashboards de risco.
-    2. **Indicações (zarc_soja.csv, etc):** Contém a lista de cultivares (nomes) recomendadas. São arquivos massivos (>1GB) que não possuem dados de risco numérico.
-
-> [!IMPORTANT]
-> O robô de ETL espera o arquivo `zarc_risco.csv` na pasta `data/zarc/`. Se você tentar carregar um arquivo de "Indicações" como se fosse "Risco", o processo irá falhar pois as colunas (decêndios) não serão encontradas.
+- **Diferenciação:** Os arquivos de Risco Climático de cada cultura (ex: zarc_soja.csv, zarc_milho.csv) contêm as probabilidades de perda (dec1 a dec36) por Município/Solo e a lista de recomendações. O ETL consolida tudo.
 
 ## 🛠️ Processo de Extração (Otimizado)
 Mesmo com o volume massivo, o projeto mantém a eficiência através de:
@@ -27,7 +22,7 @@ Diferente de abordagens que exigem bancos OLAP separados, o ZARC aqui reside 100
 - **Relacionamentos:** Chaves estrangeiras para `dim_municipio` e `dim_cultura`.
 
 ## 📥 Guia de Expansão: Como baixar outras culturas
-Atualmente, o projeto contém dados de **Soja**. Para adicionar o ZARC de outras culturas (Milho, Feijão, Arroz, etc.), siga estes passos:
+Atualmente, o projeto processa nativamente **Soja, Milho, Trigo, Algodão e Cana-de-Açúcar**. Para adicionar o ZARC de outras culturas adicionais (Café, Feijão, Arroz, etc.), siga estes passos:
 
 ### 1. Acessar o Portal de Dados Abertos
 Vá para o dataset oficial do MAPA:

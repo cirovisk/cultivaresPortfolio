@@ -62,29 +62,36 @@ class ZarcPipeline(BaseSource):
 
     def extract(self, **kwargs):
         """
-        Gera chunks de DataFrames para processamento sequencial a partir do arquivo de risco.
+        Gera chunks de DataFrames para processamento sequencial a partir dos arquivos de risco.
         """
-        cache_file = self.data_dir / "zarc_risco.csv"
+        for crop in self.TARGET_CROPS:
+            cache_file = self.data_dir / f"zarc_{crop}.csv"
 
-        if cache_file.exists():
-            self.log.info("Iniciando streaming ZARC de RISCO (Tábua)")
-            try:
-                reader = pd.read_csv(
-                    cache_file,
-                    sep=';',
-                    encoding='utf-8',
-                    on_bad_lines='skip',
-                    chunksize=self.chunksize,
-                )
-                for chunk in reader:
-                    # Tenta identificar a cultura no chunk se não houver coluna fixa
-                    if "Nome_cultura" in chunk.columns:
-                        chunk["cultura_raw"] = chunk["Nome_cultura"]
-                    yield chunk
-            except Exception as e:
-                self.log.error(f"Erro no processamento de chunk ZARC: {e}")
-        else:
-            self.log.warning(f"Arquivo zarc_risco.csv não encontrado em {self.data_dir}")
+            if cache_file.exists():
+                self.log.info(f"Iniciando streaming ZARC de RISCO ({crop})")
+                try:
+                    with open(cache_file, "rb") as f:
+                        is_gzip = f.read(2) == b'\x1f\x8b'
+                        
+                    reader = pd.read_csv(
+                        cache_file,
+                        sep=';',
+                        encoding='utf-8',
+                        on_bad_lines='skip',
+                        chunksize=self.chunksize,
+                        compression='gzip' if is_gzip else None
+                    )
+                    for chunk in reader:
+                        # Tenta identificar a cultura no chunk se não houver coluna fixa
+                        if "Nome_cultura" in chunk.columns:
+                            chunk["cultura_raw"] = chunk["Nome_cultura"]
+                        elif "cultura_raw" not in chunk.columns:
+                            chunk["cultura_raw"] = crop
+                        yield chunk
+                except Exception as e:
+                    self.log.error(f"Erro no processamento de chunk ZARC ({crop}): {e}")
+            else:
+                self.log.warning(f"Arquivo zarc_{crop}.csv não encontrado em {self.data_dir}")
 
     def get_municipios_only(self):
         """
