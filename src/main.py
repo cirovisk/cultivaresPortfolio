@@ -1,4 +1,9 @@
-"""Orquestrador genérico do Pipeline AgroHarvest BR (Registry Pattern)."""
+"""
+Orquestrador genérico.
+Registry + BaseSource = sem imports hardcoded aqui.
+Itera o registry. Chama `.run()`. Polimorfismo na prática.
+Limpo. Fácil manutenção.
+"""
 
 import argparse
 import logging
