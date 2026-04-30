@@ -1,6 +1,9 @@
 """
-Registry Pattern: Auto-descoberta de fontes de dados.
-Cada source se registra com @register("nome") ao ser importado.
+Padrão Registry. 
+Desacopla main das fontes. Fonte se auto-registra com @register.
+Nova fonte? Só adicionar arquivo. Main não muda. 
+Zero hardcode. Princípio OCP (Aberto/Fechado) aplicado.
+Fácil de escalar.
 """
 import logging
 
