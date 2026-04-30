@@ -22,7 +22,7 @@ O objetivo principal é criar um ambiente unificado para análise de dados agro,
 
 1.  **MAPA/SNPC (CultivarWeb):** Registro Nacional de Cultivares (RNC). Fornece dados sobre variedades genéticas certificadas, mantenedores oficiais, portarias de registro e proteção de cultivares.
 2.  **IBGE/SIDRA (PAM):** Produção Agrícola Municipal. Séries anuais consolidadas sobre área plantada, área colhida, quantidade produzida e valor da produção para 60+ culturas temporárias e permanentes.
-3.  **MAPA/ZARC:** Zoneamento Agrícola de Risco Climático. Define as janelas de plantio ideais por município, cruzando tipos de solo (textura) e ciclos de cultivares para mitigar perdas climáticas.
+3.  **MAPA/ZARC:** Zoneamento Agrícola de Risco Climático. Define as janelas de plantio ideais por município, cruzando tipos de solo (textura) e ciclos de cultivares para mitigar perdas climáticas. Culturas analisadas: Soja, Milho, Trigo, Algodão e Cana-de-Açúcar.
 4.  **CONAB:** Séries históricas de produção, produtividade e preços médios pagos ao produtor, fundamentais para análises de mercado e viabilidade econômica de safras.
 5.  **MAPA/Agrofit:** Sistema de Agrotóxicos Fitossanitários. Base de dados sobre defensivos registrados no Brasil, incluindo alvos biológicos (pragas), formulações e orientações técnicas.
 6.  **MAPA/SIPEAGRO:** Registro de estabelecimentos produtores e importadores de fertilizantes, corretivos e inoculantes, mapeando a infraestrutura de insumos nutricionais.
@@ -71,7 +71,7 @@ O AgroHarvest BR foi desenhado para lidar com volumes reais do agronegócio. O m
 
 -   **Carga via Streaming:** Processamento linha a linha para baixo consumo de memória RAM.
 -   **Indexação Composta:** Uso de índices B-Tree no PostgreSQL em colunas de alta cardinalidade (`id_municipio`, `id_cultura`), garantindo que consultas analíticas sejam respondidas em milissegundos.
--   **Escalabilidade de Fonte:** É possível integrar novas culturas (Milho, Café, Arroz, etc.) apenas adicionando os CSVs brutos na pasta `data/zarc/` e rodando o pipeline.
+-   **Escalabilidade de Fonte:** É possível integrar outras novas culturas (Café, Feijão, Arroz, etc.) apenas adicionando os CSVs brutos na pasta `data/zarc/` e rodando o pipeline.
 
 ## ⚙️ Como Executar
 
