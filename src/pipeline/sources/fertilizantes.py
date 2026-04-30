@@ -1,14 +1,25 @@
+"""Pipeline Fertilizantes: Estabelecimentos SIPEAGRO (MAPA)."""
+
+import os
+import logging
 import pandas as pd
 import requests
-import os
-from .base_extractor import BaseExtractor
 
-class FertilizantesExtractor(BaseExtractor):
+from pipeline.registry import register
+from pipeline.base import BaseSource
+from pipeline.utils import map_municipio_by_name, upsert_data
+from db.manager import FatoFertilizante
+
+log = logging.getLogger(__name__)
+
+
+@register("fertilizantes")
+class FertilizantesPipeline(BaseSource):
     """
     Extrator SIPEAGRO: Estabelecimentos de Fertilizantes.
     URL: https://dados.agricultura.gov.br/dataset/52a01565-72d6-410e-b21b-64035831a7be/resource/e0bbc9d5-f161-448b-a6d4-c7beb312ec33
     """
-    
+
     DOWNLOAD_URL = "https://dados.agricultura.gov.br/dataset/52a01565-72d6-410e-b21b-64035831a7be/resource/e0bbc9d5-f161-448b-a6d4-c7beb312ec33/download/sipeagrofertilizante.csv"
     FILENAME = "sipeagrofertilizante.csv"
 
@@ -19,10 +30,10 @@ class FertilizantesExtractor(BaseExtractor):
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir, exist_ok=True)
 
-    def extract(self) -> pd.DataFrame:
-        """
-        Extrai o arquivo de fertilizantes.
-        """
+    # ---- EXTRACT ----
+
+    def extract(self, **kwargs) -> pd.DataFrame:
+        """Extrai o arquivo de fertilizantes."""
         local_path = os.path.join(self.data_dir, self.FILENAME)
         is_stale = self.is_file_stale(local_path, threshold_days=30)
 
@@ -93,3 +104,51 @@ class FertilizantesExtractor(BaseExtractor):
         with open(local_path, "wb") as f:
             f.write(resp.content)
         self.log.info(f"Download concluído: {self.FILENAME} ({len(resp.content) / 1024:.1f} KB)")
+
+    # ---- CLEAN ----
+
+    def clean(self, df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df
+
+        self.log.info(f"Cleaner SIPEAGRO: {len(df)} linha(s) recebida(s).")
+
+        renames = {
+            "UNIDADE_DA_FEDERACAO": "uf",
+            "MUNICIPIO": "municipio",
+            "NUMERO_REGISTRO_ESTABELECIMENTO": "nr_registro_estabelecimento",
+            "STATUS_DO_REGISTRO": "status_registro",
+            "CNPJ": "cnpj",
+            "RAZAO_SOCIAL": "razao_social",
+            "NOME_FANTASIA": "nome_fantasia",
+            "AREA_ATUACAO": "area_atuacao",
+            "ATIVIDADE": "atividade",
+            "CLASSIFICACAO": "classificacao"
+        }
+
+        df = df.rename(columns=renames)
+
+        str_cols = [c for c in df.columns if df[c].dtype == object]
+        for col in str_cols:
+            df[col] = df[col].str.strip()
+
+        sem_registro = df["nr_registro_estabelecimento"].isna().sum() if "nr_registro_estabelecimento" in df.columns else "N/A"
+        self.log.info(
+            f"Cleaner SIPEAGRO concluído: {len(df)} estabelecimento(s). "
+            f"Sem número de registro: {sem_registro}."
+        )
+        return df
+
+    # ---- LOAD ----
+
+    def load(self, df: pd.DataFrame, lookups: dict) -> str:
+        if df.empty:
+            return "0 registros"
+
+        df_f = df.copy()
+        df_f["id_municipio"] = map_municipio_by_name(df_f, lookups["municipios_nome"])
+        df_f = df_f.drop_duplicates(subset=["nr_registro_estabelecimento"])
+        upsert_data(FatoFertilizante, df_f, index_elements=['nr_registro_estabelecimento'])
+        result = f"{len(df_f)} estabelecimentos upserted"
+        self.log.info(f"Fato Fertilizantes: {result}.")
+        return result

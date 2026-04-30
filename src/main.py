@@ -1,212 +1,74 @@
+"""Orquestrador genérico do Pipeline AgroHarvest BR (Registry Pattern)."""
+
 import argparse
 import logging
-import pandas as pd
 import gc
-from pipeline.cultivares import CultivaresExtractor
-from pipeline.sidra import SidraExtractor
-from pipeline.zarc import ZarcExtractor
-from pipeline.conab import ConabExtractor
-from pipeline.agrofit import AgrofitExtractor
-from pipeline.fertilizantes import FertilizantesExtractor
-from pipeline.sigef import SigefExtractor
-from pipeline.inmet import InmetExtractor
-from db.manager import init_db, get_db, DimMunicipio
-from pipeline.loaders import (
-    preencher_dimensao_cultura, preencher_dimensao_mantenedor, 
-    preencher_dimensao_municipio, carregar_municipios_completo_ibge,
-    load_fact_cultivares, load_fact_pam,
-    load_fact_zarc, load_fact_conab, load_fact_agrofit, 
-    load_fact_fertilizantes, load_fact_sigef, load_fact_meteorologia
+
+from db.manager import init_db, get_db
+from pipeline.registry import get_sources
+from pipeline.dimensions import (
+    preencher_dimensao_cultura,
+    carregar_municipios_completo_ibge,
 )
 
-from pipeline.cleaners.conab import clean_conab
-from pipeline.cleaners.sigef import clean_sigef
-from pipeline.cleaners.cultivares import clean_cultivares
-from pipeline.cleaners.sidra import clean_sidra
-from pipeline.cleaners.zarc import clean_zarc
-from pipeline.cleaners.agrofit import clean_agrofit
-from pipeline.cleaners.fertilizantes import clean_fertilizantes
-from pipeline.cleaners.inmet import clean_inmet
-
-EXTRACTORS = {
-    "cultivares": CultivaresExtractor,
-    "sidra": SidraExtractor,
-    "zarc": ZarcExtractor,
-    "conab": ConabExtractor,
-    "agrofit": AgrofitExtractor,
-    "fertilizantes": FertilizantesExtractor,
-    "sigef": SigefExtractor,
-    "inmet": InmetExtractor
-}
-
-CLEANERS = {
-    "cultivares": clean_cultivares,
-    "sidra": clean_sidra,
-    "zarc": clean_zarc,
-    "conab": clean_conab,
-    "agrofit": clean_agrofit,
-    "fertilizantes": clean_fertilizantes,
-    "sigef": clean_sigef,
-    "inmet": clean_inmet
-}
+# IMPORTANTE: importar o pacote sources para acionar os @register
+import pipeline.sources  # noqa: F401
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-def run_step(source_name, ext_instance):
-    """Executa extração e limpeza para uma única fonte."""
-    log.info(f"Processando fonte: [{source_name}]")
-    try:
-        raw_data = ext_instance.extract()
-        cleaner_func = CLEANERS.get(source_name)
-        if cleaner_func:
-            df = cleaner_func(raw_data)
-        else:
-            df = raw_data
-        return df
-    except Exception as e:
-        log.error(f"Erro ao processar [{source_name}]: {e}")
-        return pd.DataFrame()
+CULTURAS_ALVO = ["soja", "milho", "trigo", "algodão", "cana-de-açúcar"]
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Pipeline Agro-Dados (Otimizado)")
-    parser.add_argument("--sources", nargs="+", choices=EXTRACTORS.keys(), default=list(EXTRACTORS.keys()), help="Fontes de dados")
-    parser.add_argument("--refresh-conab", action="store_true", help="Força download CONAB")
+    sources = get_sources()
+
+    parser = argparse.ArgumentParser(description="Pipeline AgroHarvest BR")
+    parser.add_argument(
+        "--sources", nargs="+", choices=sources.keys(),
+        default=list(sources.keys()), help="Fontes de dados a processar"
+    )
+    parser.add_argument("--refresh", action="store_true", help="Força refresh de caches")
     args = parser.parse_args()
 
-    log.info("--- Iniciando Orquestração do Pipeline Agro (Serial & Low Memory) ---")
+    log.info("--- Iniciando Pipeline AgroHarvest BR (Registry) ---")
     init_db()
     db = next(get_db())
 
-    culturas_alvo = ["soja", "milho", "trigo", "algodão", "cana-de-açúcar"]
-    
-    # 1. DimCultura (Sempre primeiro)
-    map_cult = preencher_dimensao_cultura(db, culturas_alvo)
+    # Lookups compartilhados (construídos uma vez, usados por todos)
+    lookups = {
+        "db": db,
+        "culturas": preencher_dimensao_cultura(db, CULTURAS_ALVO),
+        "municipios_ibge": {},
+        "municipios_nome": {},
+    }
+    map_ibge, map_nome = carregar_municipios_completo_ibge(db)
+    lookups["municipios_ibge"] = map_ibge
+    lookups["municipios_nome"] = map_nome
 
-    # 2. Dimensões baseadas em Município (Sempre garantindo carga completa primeiro)
-    map_mun, map_mun_name = carregar_municipios_completo_ibge(db)
+    success, failed = [], []
 
-    success_sources = []
-    failed_sources = []
-
-    # 3. Cultivares (Depende de Mantenedor)
-    if "cultivares" in args.sources:
+    for name in args.sources:
+        source_cls = sources.get(name)
+        if not source_cls:
+            log.warning(f"Fonte '{name}' não registrada — pulando.")
+            continue
+        pipeline = source_cls()
         try:
-            df_cult = run_step("cultivares", CultivaresExtractor(use_cache=True))
-            map_mant = preencher_dimensao_mantenedor(db, df_cult)
-            load_fact_cultivares(db, df_cult, map_cult, map_mant)
-            del df_cult
-            success_sources.append("cultivares")
+            result = pipeline.run(lookups)
+            success.append(name)
+            log.info(f"✓ {name}: {result}")
         except Exception as e:
-            log.error(f"Falha isolada em cultivares: {e}")
-            failed_sources.append("cultivares")
+            failed.append(name)
+            log.error(f"✗ {name}: {e}")
         finally:
             gc.collect()
 
-    # --- SIDRA ---
-    if "sidra" in args.sources:
-        try:
-            ext = SidraExtractor()
-            ext.TARGET_CROPS = {k: ext.TARGET_CROPS[k] for k in culturas_alvo if k in ext.TARGET_CROPS}
-            df_sidra = run_step("sidra", ext)
-            if not df_sidra.empty:
-                load_fact_pam(db, df_sidra, map_cult, map_mun)
-            del df_sidra
-            success_sources.append("sidra")
-        except Exception as e:
-            log.error(f"Falha isolada em sidra: {e}")
-            failed_sources.append("sidra")
-        finally:
-            gc.collect()
+    log.info("--- Pipeline Concluído ---")
+    log.info(f"Sucesso: {success}")
+    if failed:
+        log.warning(f"Falhas: {failed}")
 
-    # --- ZARC ---
-    if "zarc" in args.sources:
-        try:
-            ext_zarc = ZarcExtractor()
-            ext_zarc.TARGET_CROPS = [c.replace("ç", "c").replace("ã", "a") for c in culturas_alvo]
-            df_zarc_muns = ext_zarc.get_municipios_only()
-            zarc_gen = ext_zarc.extract()
-            if zarc_gen:
-                log.info("Carregando Fatos ZARC via Streaming...")
-                load_fact_zarc(db, zarc_gen, map_cult, map_mun)
-            del zarc_gen
-            success_sources.append("zarc")
-        except Exception as e:
-            log.error(f"Falha isolada em zarc: {e}")
-            failed_sources.append("zarc")
-        finally:
-            gc.collect()
-
-    # --- CONAB ---
-    if "conab" in args.sources:
-        try:
-            df_conab = run_step("conab", ConabExtractor(force_refresh=args.refresh_conab))
-            load_fact_conab(db, df_conab, map_cult, map_mun)
-            del df_conab
-            success_sources.append("conab")
-        except Exception as e:
-            log.error(f"Falha isolada em conab: {e}")
-            failed_sources.append("conab")
-        finally:
-            gc.collect()
-
-    # --- AGROFIT (A mais pesada) ---
-    if "agrofit" in args.sources:
-        try:
-            df_agrofit = run_step("agrofit", AgrofitExtractor())
-            load_fact_agrofit(db, df_agrofit, map_cult)
-            del df_agrofit
-            success_sources.append("agrofit")
-        except Exception as e:
-            log.error(f"Falha isolada em agrofit: {e}")
-            failed_sources.append("agrofit")
-        finally:
-            gc.collect()
-
-    # --- FERTILIZANTES ---
-    if "fertilizantes" in args.sources:
-        try:
-            df_fert = run_step("fertilizantes", FertilizantesExtractor())
-            load_fact_fertilizantes(db, df_fert, map_mun_name)
-            del df_fert
-            success_sources.append("fertilizantes")
-        except Exception as e:
-            log.error(f"Falha isolada em fertilizantes: {e}")
-            failed_sources.append("fertilizantes")
-        finally:
-            gc.collect()
-
-    # --- SIGEF ---
-    if "sigef" in args.sources:
-        try:
-            df_sigef = run_step("sigef", SigefExtractor())
-            load_fact_sigef(db, df_sigef, map_cult, map_mun_name)
-            del df_sigef
-            success_sources.append("sigef")
-        except Exception as e:
-            log.error(f"Falha isolada em sigef: {e}")
-            failed_sources.append("sigef")
-        finally:
-            gc.collect()
-
-    # --- INMET ---
-    if "inmet" in args.sources:
-        try:
-            log.info("Processando Meteorologia...")
-            all_muns = db.query(DimMunicipio).all()
-            ext_inmet = InmetExtractor(days_history=730)
-            load_fact_meteorologia(db, pd.DataFrame(), ext_inmet, all_muns)
-            success_sources.append("inmet")
-        except Exception as e:
-            log.error(f"Falha isolada em inmet: {e}")
-            failed_sources.append("inmet")
-        finally:
-            gc.collect()
-
-    log.info(f"--- Pipeline Concluído ---")
-    log.info(f"Sucesso: {success_sources}")
-    if failed_sources:
-        log.warning(f"Falhas: {failed_sources}")
 
 if __name__ == "__main__":
     main()

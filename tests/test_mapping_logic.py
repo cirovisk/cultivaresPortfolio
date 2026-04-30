@@ -1,6 +1,6 @@
 import pytest
 import pandas as pd
-from src.pipeline.loaders import preencher_dimensao_cultura, preencher_dimensao_mantenedor, preencher_dimensao_municipio
+from src.pipeline.dimensions import preencher_dimensao_cultura, preencher_dimensao_mantenedor, preencher_dimensao_municipio
 from src.db.manager import DimCultura, DimMunicipio, DimMantenedor
 
 def test_preencher_dimensao_cultura(db_session):
@@ -62,7 +62,7 @@ def test_preencher_dimensao_municipio(db_session):
 
 def test_get_cultura_id_logic():
     """Testa a lógica de busca flexível de cultura por nome."""
-    from src.pipeline.loaders import get_cultura_id
+    from src.pipeline.utils import get_cultura_id
     
     mapping = {
         "soja": 1,
