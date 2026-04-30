@@ -7,7 +7,7 @@ ESTRATÉGIAS DE OTIMIZAÇÃO PARA GRANDES VOLUMES:
 2. Processamento em Chunks: Utiliza a funcionalidade 'chunksize' do Pandas para
    fatiar a leitura do CSV em blocos controlados (ex: 50k linhas).
 3. Detecção de Compressão: Identifica arquivos Gzip através da leitura de Magic Bytes
-   iniciais (b'\\x1f\\x8b'), garantindo a descompressão mesmo em arquivos com extensão .csv.
+   iniciais (b'\x1f\x8b'), garantindo a descompressão mesmo em arquivos com extensão .csv.
 4. Carga Seletiva: Método de extração de municípios lê apenas as colunas geográficas
    necessárias, reduzindo drasticamente o overhead de I/O.
 """
@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 class ZarcPipeline(BaseSource):
     """
     Pipeline ZARC com processamento em streaming (chunks).
-    Sobrescreve run() para iterar o generator e chamar clean+load por chunk.
+    Lê arquivos CSV locais por cultura.
     """
 
     TARGET_CROPS = ["soja", "milho", "trigo", "algodao", "cana-de-acucar"]
@@ -68,7 +68,8 @@ class ZarcPipeline(BaseSource):
             cache_file = self.data_dir / f"zarc_{crop}.csv"
 
             if cache_file.exists():
-                self.log.info(f"Iniciando streaming ZARC de RISCO ({crop})")
+                self.log.info(f"--- Cultura detectada: {crop.upper()} ---")
+                self.log.info(f"Iniciando leitura do arquivo: {cache_file.name}")
                 try:
                     with open(cache_file, "rb") as f:
                         is_gzip = f.read(2) == b'\x1f\x8b'
@@ -91,7 +92,8 @@ class ZarcPipeline(BaseSource):
                 except Exception as e:
                     self.log.error(f"Erro no processamento de chunk ZARC ({crop}): {e}")
             else:
-                self.log.warning(f"Arquivo zarc_{crop}.csv não encontrado em {self.data_dir}")
+                self.log.warning(f"Atenção: Arquivo para '{crop.upper()}' não encontrado em {self.data_dir}")
+                self.log.info(f"Dica: Baixe o ZARC de {crop} no portal do MAPA e salve como zarc_{crop}.csv")
 
     def get_municipios_only(self):
         """

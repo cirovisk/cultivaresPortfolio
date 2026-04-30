@@ -56,8 +56,8 @@ def mock_zarc_raw():
         "municipio": ["Municipio A", "Municipio B"],
         "cultura_raw": ["Soja", "Algodao"],
         "SOLO": ["Tipo 1", "Tipo 2"],
-        "PERIODO": ["Outubro", "Novembro"],
-        "RiscoClima": ["20%", "30%"]
+        "dec1": ["20%", "30%"],
+        "dec2": ["40%", "10%"]
     }
     return pd.DataFrame(data)
 

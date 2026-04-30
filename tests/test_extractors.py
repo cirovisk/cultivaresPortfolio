@@ -2,7 +2,6 @@ import pytest
 import pandas as pd
 from src.pipeline.sources.cultivares import CultivaresPipeline
 from src.pipeline.sources.sidra import SidraPipeline
-from src.pipeline.sources.zarc import ZarcPipeline
 from src.pipeline.sources.conab import ConabPipeline
 from src.pipeline.sources.agrofit import AgrofitPipeline
 
@@ -50,15 +49,16 @@ def test_sidra_transform(mock_sidra_raw):
     assert row_mun_a["area_plantada_ha"] == 1000.0
 
 def test_zarc_transform(mock_zarc_raw):
+    from src.pipeline.sources.zarc import ZarcPipeline
     pipeline = ZarcPipeline()
     df_clean = pipeline.clean(mock_zarc_raw)
     
     assert not df_clean.empty
     
-    # Valida renomeacao snake_case e encoding
+    # Valida renomeacao snake_case e normalizacao
     cols = df_clean.columns.tolist()
     assert "cod_municipio_ibge" in cols
-    assert "riscoclima" in cols
+    assert "solo" in cols
     
     # Valida normalizacao cultura
     row = df_clean.iloc[0]
