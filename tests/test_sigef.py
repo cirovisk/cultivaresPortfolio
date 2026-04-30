@@ -1,7 +1,6 @@
 import pytest
 import pandas as pd
-from src.pipeline.sigef import SigefExtractor
-from src.pipeline.cleaners.sigef import clean_sigef_producao, clean_sigef_reserva_semente
+from src.pipeline.sources.sigef import SigefPipeline
 
 @pytest.fixture
 def mock_sigef_producao_raw():
@@ -39,7 +38,8 @@ def mock_sigef_uso_proprio_raw():
     ])
 
 def test_sigef_transform_producao(mock_sigef_producao_raw):
-    df_clean = clean_sigef_producao(mock_sigef_producao_raw)
+    pipeline = SigefPipeline()
+    df_clean = pipeline._clean_producao(mock_sigef_producao_raw)
     
     assert not df_clean.empty
     row = df_clean.iloc[0]
@@ -50,7 +50,8 @@ def test_sigef_transform_producao(mock_sigef_producao_raw):
     assert row["data_plantio"].year == 2023
 
 def test_sigef_transform_uso_proprio(mock_sigef_uso_proprio_raw):
-    df_clean = clean_sigef_reserva_semente(mock_sigef_uso_proprio_raw)
+    pipeline = SigefPipeline()
+    df_clean = pipeline._clean_reserva_semente(mock_sigef_uso_proprio_raw)
     
     assert not df_clean.empty
     row = df_clean.iloc[0]

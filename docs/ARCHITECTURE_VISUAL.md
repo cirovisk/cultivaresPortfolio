@@ -60,9 +60,9 @@ erDiagram
     }
 ```
 
-## 2. Fluxo de Dados (Pipeline ETL)
+## 2. Fluxo de Dados (Pipeline ETL — Registry Pattern)
 
-O pipeline segue uma arquitetura moderna de processamento sequencial, garantindo baixo consumo de memória (via Streaming de dados no ZARC) e alta fidelidade na padronização de nomes.
+O pipeline utiliza o **Registry Pattern**: cada fonte de dados é uma classe autocontida (`extract + clean + load`) registrada via decorator `@register`. O orquestrador descobre e executa as fontes automaticamente, sem necessidade de configuração manual.
 
 ```mermaid
 graph LR
@@ -73,10 +73,11 @@ graph LR
         CONAB["CONAB (Safras)"]
     end
 
-    subgraph "Engine de ETL (Python/Docker)"
-        EX["Extractors"]
-        CL["Cleaners"]
-        LD["Loaders"]
+    subgraph "Pipeline Engine (Python/Docker)"
+        REG["Registry (@register)"]
+        SRC["Sources (E+C+L)"]
+        DIM["Dimensions"]
+        UTL["Utils (upsert)"]
     end
 
     subgraph "Storage & BI"
@@ -85,17 +86,43 @@ graph LR
         MB["Metabase"]
     end
 
-    MAPA --> EX
-    IBGE --> EX
-    INMET --> EX
-    CONAB --> EX
+    MAPA --> SRC
+    IBGE --> SRC
+    INMET --> SRC
+    CONAB --> SRC
     
-    EX --> CL
-    CL --> LD
-    LD --> PG
+    SRC --> REG
+    REG --> DIM
+    DIM --> PG
+    SRC --> UTL
+    UTL --> PG
     
     PG --> API
     PG --> MB
+```
+
+### Estrutura de Diretórios
+
+```
+src/
+├── main.py                     # Orquestrador genérico (~65 linhas)
+├── db/
+│   └── manager.py              # ORM Models (Star Schema)
+├── pipeline/
+│   ├── registry.py             # @register decorator + discovery
+│   ├── base.py                 # Contrato BaseSource (E+C+L)
+│   ├── utils.py                # upsert_data, normalize_string, get_cultura_id
+│   ├── dimensions.py           # DimCultura, DimMunicipio, DimMantenedor
+│   └── sources/
+│       ├── cultivares.py       # SNPC/MAPA
+│       ├── sidra.py            # PAM/IBGE
+│       ├── zarc.py             # Risco Climático (streaming)
+│       ├── conab.py            # Produção + Preços
+│       ├── agrofit.py          # Agrotóxicos
+│       ├── fertilizantes.py    # SIPEAGRO
+│       ├── sigef.py            # Sementes
+│       └── inmet.py            # Meteorologia
+└── api/                        # FastAPI (endpoints analíticos)
 ```
 
 ---

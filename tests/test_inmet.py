@@ -1,8 +1,7 @@
 import pytest
 import pandas as pd
 from datetime import datetime
-from src.pipeline.inmet import InmetExtractor
-from src.pipeline.cleaners.inmet import clean_inmet
+from src.pipeline.sources.inmet import InmetPipeline
 
 @pytest.fixture
 def mock_inmet_hourly_data():
@@ -16,7 +15,8 @@ def test_inmet_aggregation(mock_inmet_hourly_data):
     # Simula dicionário retornado pelo extract
     dataframes = {"A101": mock_inmet_hourly_data}
     
-    df_daily = clean_inmet(dataframes)
+    pipeline = InmetPipeline()
+    df_daily = pipeline.clean(dataframes)
     
     assert not df_daily.empty
     assert len(df_daily) == 2
@@ -37,7 +37,7 @@ def test_inmet_fetch_chunks_logic():
         mock_get.return_value.status_code = 200
         mock_get.return_value.json.return_value = [{"DT_MEDICAO": "2024-01-01", "HR_MEDICAO": "1200", "CHUVA": "0"}]
         
-        ext = InmetExtractor(days_history=400) # Força 2 chunks (> 365 dias)
+        ext = InmetPipeline(days_history=400) # Força 2 chunks (> 365 dias)
         start = datetime(2023, 1, 1)
         end = datetime(2024, 2, 5)
         
