@@ -27,7 +27,7 @@ O objetivo principal é criar um ambiente unificado para análise de dados agro,
 5.  **MAPA/Agrofit:** Sistema de Agrotóxicos Fitossanitários. Base de dados sobre defensivos registrados no Brasil, incluindo alvos biológicos (pragas), formulações e orientações técnicas.
 6.  **MAPA/SIPEAGRO:** Registro de estabelecimentos produtores e importadores de fertilizantes, corretivos e inoculantes, mapeando a infraestrutura de insumos nutricionais.
 7.  **MAPA/SIGEF (Sementes):** Controle e fiscalização da produção de sementes e mudas, garantindo a rastreabilidade e a qualidade da tecnologia genética aplicada no campo.
-8.  **INMET (Meteorologia):** Rede de 700+ estações automáticas que fornecem indicadores diários de precipitação, temperatura e umidade para cruzamento com o desempenho das safras.
+8.  **Open-Meteo (Meteorologia):** API global baseada em modelos e satélites que fornece indicadores históricos diários de precipitação e temperatura de forma contínua para todos os 5570 municípios brasileiros.
 
 </details>
 
@@ -67,9 +67,7 @@ A documentação visual completa pode ser encontrada em: **[ARCHITECTURE_VISUAL.
 
 ## 📈 Performance e Escalabilidade (ZARC)
 
-O AgroHarvest BR foi desenhado para lidar com volumes reais do agronegócio. O módulo **ZARC**, que processa milhões de registros de risco climático, utiliza:
-
--   **Carga via Streaming:** Processamento linha a linha para baixo consumo de memória RAM.
+-   **Carga via Streaming:** Processamento linha a linha para baixo consumo de memória RAM, suportando CSVs de múltiplos gigabytes.
 -   **Indexação Composta:** Uso de índices B-Tree no PostgreSQL em colunas de alta cardinalidade (`id_municipio`, `id_cultura`), garantindo que consultas analíticas sejam respondidas em milissegundos.
 -   **Escalabilidade de Fonte:** É possível integrar outras novas culturas (Café, Feijão, Arroz, etc.) apenas adicionando os CSVs brutos na pasta `data/zarc/` e rodando o pipeline.
 
@@ -114,7 +112,7 @@ O AgroHarvest BR foi desenhado para lidar com volumes reais do agronegócio. O m
 - **IBGE (SIDRA/PAM):** Dados públicos sob os [Termos de Uso do IBGE](https://www.ibge.gov.br/institucional/o-ibge/termos-de-uso.html). A citação da fonte é obrigatória.
 - **CONAB:** Dados sob licença [CC BY-ND 3.0](https://creativecommons.org/licenses/by-nd/3.0/br/). A reprodução é permitida para fins não lucrativos com citação obrigatória da fonte. 
 - **MAPA (ZARC, RNC, Agrofit, Fertilizantes, SIGEF):** Dados abertos conforme o [Decreto nº 8.777/2016](http://www.planalto.gov.br/ccivil_03/_ato2015-2018/2016/decreto/d8777.htm).
-- **INMET:** Dados públicos regidos pela LAI. A citação da fonte (**Instituto Nacional de Meteorologia - INMET**) é obrigatória conforme normas técnicas.
+- **Open-Meteo:** Dados meteorológicos abertos e gratuitos fornecidos sob licença CC-BY 4.0.
 
 </details>
 
